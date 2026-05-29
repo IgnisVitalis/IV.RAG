@@ -1,0 +1,6 @@
+<Project>
+  <!-- IsTestProject is set in the .csproj, so conditions here evaluate correctly -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true'">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

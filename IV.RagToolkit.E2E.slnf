@@ -1,0 +1,8 @@
+{
+  "solution": {
+    "path": "IV.RagToolkit.sln",
+    "projects": [
+      "tests\\e2e\\IV.RagToolkit.E2ETests\\IV.RagToolkit.E2ETests.csproj"
+    ]
+  }
+}

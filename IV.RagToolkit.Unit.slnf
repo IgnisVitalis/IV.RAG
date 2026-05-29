@@ -1,0 +1,10 @@
+{
+  "solution": {
+    "path": "IV.RagToolkit.sln",
+    "projects": [
+      "tests\\unit\\IV.RagToolkit.Core.Tests\\IV.RagToolkit.Core.Tests.csproj",
+      "tests\\unit\\IV.RagToolkit.Ollama.Tests\\IV.RagToolkit.Ollama.Tests.csproj",
+      "tests\\unit\\IV.RagToolkit.Postgres.Tests\\IV.RagToolkit.Postgres.Tests.csproj"
+    ]
+  }
+}

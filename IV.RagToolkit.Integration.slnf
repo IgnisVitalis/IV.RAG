@@ -1,0 +1,8 @@
+{
+  "solution": {
+    "path": "IV.RagToolkit.sln",
+    "projects": [
+      "tests\\integration\\IV.RagToolkit.IntegrationTests\\IV.RagToolkit.IntegrationTests.csproj"
+    ]
+  }
+}

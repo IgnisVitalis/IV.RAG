@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\IV.RagToolkit.Core\IV.RagToolkit.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\IV.RagToolkit.Ollama\IV.RagToolkit.Ollama.csproj" />
+    <ProjectReference Include="..\..\..\src\IV.RagToolkit.Postgres\IV.RagToolkit.Postgres.csproj" />
+  </ItemGroup>
+
+</Project>
