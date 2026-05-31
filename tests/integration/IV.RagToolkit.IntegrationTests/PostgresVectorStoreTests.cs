@@ -9,6 +9,9 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
 {
     private readonly PostgresContainerFixture _fixture;
 
+    private static readonly Document.Origin TestOrigin =
+        new(new Guid("a0000000-0000-0000-0000-000000000001"), "Test", "doc-1");
+
     public PostgresVectorStoreTests(PostgresContainerFixture fixture) => _fixture = fixture;
 
     private (PostgresVectorStore Store, PostgresRetriever Retriever) Create(string tableName)
@@ -28,7 +31,7 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
     {
         var (store, retriever) = Create(PostgresContainerFixture.NewTable());
         var embedding = new float[] { 1f, 0f, 0f };
-        var chunk = new Chunk { Id = "1", Text = "cats", Embedding = embedding };
+        var chunk = new Chunk { Id = "1", Text = "cats", Embedding = embedding, Origin = TestOrigin };
 
         await store.UpsertAsync([chunk]);
 
@@ -44,8 +47,8 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
         var (store, retriever) = Create(PostgresContainerFixture.NewTable());
         var embedding = new float[] { 1f, 0f, 0f };
 
-        await store.UpsertAsync([new Chunk { Id = "1", Text = "original", Embedding = embedding }]);
-        await store.UpsertAsync([new Chunk { Id = "1", Text = "updated", Embedding = embedding }]);
+        await store.UpsertAsync([new Chunk { Id = "1", Text = "original", Embedding = embedding, Origin = TestOrigin }]);
+        await store.UpsertAsync([new Chunk { Id = "1", Text = "updated", Embedding = embedding, Origin = TestOrigin }]);
 
         var results = await retriever.RetrieveAsync(embedding, new RetrievalOptions { TopK = 10 });
         results.Should().HaveCount(1);
@@ -57,7 +60,7 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
     {
         var (store, retriever) = Create(PostgresContainerFixture.NewTable());
         var embedding = new float[] { 1f, 0f, 0f };
-        await store.UpsertAsync([new Chunk { Id = "1", Text = "cats", Embedding = embedding }]);
+        await store.UpsertAsync([new Chunk { Id = "1", Text = "cats", Embedding = embedding, Origin = TestOrigin }]);
 
         await store.DeleteAsync(["1"]);
 
@@ -69,7 +72,7 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
     public async Task DeleteAsync_UnknownId_DoesNotThrow()
     {
         var (store, _) = Create(PostgresContainerFixture.NewTable());
-        await store.UpsertAsync([new Chunk { Id = "1", Text = "x", Embedding = new float[] { 1f, 0f, 0f } }]);
+        await store.UpsertAsync([new Chunk { Id = "1", Text = "x", Embedding = new float[] { 1f, 0f, 0f }, Origin = TestOrigin }]);
 
         var act = async () => await store.DeleteAsync(["unknown-id"]);
 
@@ -82,11 +85,33 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
         var (store, retriever) = Create(PostgresContainerFixture.NewTable());
         var embedding = new float[] { 1f, 0f, 0f };
         var metadata = new Dictionary<string, object> { ["source"] = "doc.txt", ["page"] = 1 };
-        var chunk = new Chunk { Id = "1", Text = "text", Embedding = embedding, Metadata = metadata };
+        var chunk = new Chunk { Id = "1", Text = "text", Embedding = embedding, Metadata = metadata, Origin = TestOrigin };
 
         await store.UpsertAsync([chunk]);
 
         var results = await retriever.RetrieveAsync(embedding, new RetrievalOptions { TopK = 1 });
         results[0].Chunk.Metadata.Should().ContainKey("source");
+    }
+
+    [Fact]
+    public async Task DeleteByDocumentAsync_RemovesAllChunksForDocument()
+    {
+        var (store, retriever) = Create(PostgresContainerFixture.NewTable());
+        var embedding = new float[] { 1f, 0f, 0f };
+        var origin = new Document.Origin(new Guid("b0000000-0000-0000-0000-000000000001"), "Invoice", "inv-42");
+        var otherOrigin = new Document.Origin(new Guid("b0000000-0000-0000-0000-000000000001"), "Invoice", "inv-99");
+
+        await store.UpsertAsync(
+        [
+            new Chunk { Id = "1", Text = "chunk-a", Embedding = embedding, Origin = origin },
+            new Chunk { Id = "2", Text = "chunk-b", Embedding = embedding, Origin = origin },
+            new Chunk { Id = "3", Text = "other",   Embedding = embedding, Origin = otherOrigin }
+        ]);
+
+        await store.DeleteByDocumentAsync(origin);
+
+        var results = await retriever.RetrieveAsync(embedding, new RetrievalOptions { TopK = 10, MinScore = -1f });
+        results.Should().HaveCount(1);
+        results[0].Chunk.Id.Should().Be("3");
     }
 }

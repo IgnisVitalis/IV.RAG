@@ -38,7 +38,8 @@ public sealed class FixedSizeChunker : IChunker
             yield return new Chunk
             {
                 Text = text.Substring(position, length),
-                Metadata = document.Metadata
+                Metadata = document.Metadata,
+                Origin = document.Source
             };
 
             position += step;

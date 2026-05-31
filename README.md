@@ -2,6 +2,8 @@
 
 A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pipelines. Provides infrastructure and base abstractions — every step is swappable via dependency injection without touching pipeline logic.
 
+> **Pre-1.0 — active development. Breaking changes may occur between versions.**
+
 ## Packages
 
 | Package | Description |
@@ -12,6 +14,8 @@ A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pi
 | `IV.RagToolkit.Postgres` | `IVectorStore` and `IRetriever` backed by PostgreSQL + pgvector. |
 
 ## Quick start
+
+### 1. Register services
 
 ```csharp
 services.AddRagToolkit()
@@ -28,17 +32,49 @@ services.AddRagToolkit()
     });
 ```
 
-Then inject `IRagPipeline`:
+### 2. Define your document type
+
+Every document type must subclass `Document` and provide a stable `Origin` that uniquely identifies where it came from.
+
+```csharp
+using System.Diagnostics.CodeAnalysis;
+
+public record InvoiceDocument : Document
+{
+    // One Guid per document type — generated once, never changes
+    private static readonly Guid SourceId = new("a34a3c8c-9a31-45f0-b5f7-d83b4ad62d11");
+
+    public override Origin Source { get; }
+
+    [SetsRequiredMembers]
+    public InvoiceDocument(string text, string invoiceId)
+    {
+        Text = text;
+        Source = new Origin(SourceId, "Invoice", invoiceId);
+    }
+}
+```
+
+### 3. Ingest and query
 
 ```csharp
 // Ingest
-await pipeline.IngestAsync(new Document("your text here"));
+await pipeline.IngestAsync(new InvoiceDocument(invoiceText, invoiceId: "INV-001"));
 
 // Query
 var results = await pipeline.QueryAsync("your question");
 
 foreach (var result in results)
     Console.WriteLine($"[{result.Score:F2}] {result.Chunk.Text}");
+```
+
+### 4. Replace a document
+
+When a document changes, delete its old chunks before re-ingesting:
+
+```csharp
+await vectorStore.DeleteByDocumentAsync(doc.Source);
+await pipeline.IngestAsync(updatedDoc);
 ```
 
 ## Prerequisites
@@ -56,6 +92,33 @@ foreach (var result in results)
 Ingest:  Document → IChunker → IEmbedder → IVectorStore
 Query:   string   → IEmbedder → IRetriever → IReadOnlyList<SearchResult>
 ```
+
+### Document identity
+
+Every `Document` subclass carries a `Source` property of type `Document.Origin`:
+
+```csharp
+public sealed record Origin(Guid SourceId, string DocumentType, string DocumentId)
+```
+
+| Field | Purpose |
+|---|---|
+| `SourceId` | Identifies the source system (one Guid per document class, stable forever) |
+| `DocumentType` | Identifies the document category within that system (`"Invoice"`, `"Contract"`) |
+| `DocumentId` | Identifies the specific document instance (`"INV-001"`) |
+
+Origin is propagated automatically to every `Chunk` produced during ingestion and stored as dedicated columns in the vector store. This enables `DeleteByDocumentAsync` to atomically remove all chunks belonging to a specific document.
+
+### Chunk enrichment
+
+The pipeline automatically enriches each chunk before storage:
+
+| Property | Set by | Value |
+|---|---|---|
+| `Chunk.Id` | `RagPipeline` | Random `Guid` |
+| `Chunk.Embedding` | `RagPipeline` | Output of `IEmbedder` |
+| `Chunk.Origin` | `IChunker` | Copied from `Document.Source` |
+| `Chunk.ChunkIndex` | `RagPipeline` | Zero-based position within the document |
 
 ### Similarity score
 

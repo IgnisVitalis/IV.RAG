@@ -20,8 +20,8 @@ public class RagPipelineTests
     [Fact]
     public async Task IngestAsync_EmbedseachChunk_ThenUpsertsAll()
     {
-        var doc = new Document("text");
-        var chunk = new Chunk { Text = "text" };
+        var doc = new TestDocument("text");
+        var chunk = new Chunk { Text = "text", Origin = doc.Source };
         var embedding = new float[] { 0.1f, 0.2f };
 
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(chunk));
@@ -37,8 +37,8 @@ public class RagPipelineTests
     [Fact]
     public async Task IngestAsync_AssignsIdToEachChunk()
     {
-        var doc = new Document("text");
-        _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text" }));
+        var doc = new TestDocument("text");
+        _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
         _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
 
         IEnumerable<Chunk>? upserted = null;
@@ -53,8 +53,12 @@ public class RagPipelineTests
     [Fact]
     public async Task IngestAsync_MultipleChunks_EachGetsUniqueId()
     {
-        var doc = new Document("text");
-        var chunks = new[] { new Chunk { Text = "a" }, new Chunk { Text = "b" } };
+        var doc = new TestDocument("text");
+        var chunks = new[]
+        {
+            new Chunk { Text = "a", Origin = doc.Source },
+            new Chunk { Text = "b", Origin = doc.Source }
+        };
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(chunks));
         _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
 
@@ -65,6 +69,28 @@ public class RagPipelineTests
         await _pipeline.IngestAsync(doc);
 
         upserted!.Select(c => c.Id).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public async Task IngestAsync_AssignsChunkIndexInOrder()
+    {
+        var doc = new TestDocument("text");
+        var chunks = new[]
+        {
+            new Chunk { Text = "a", Origin = doc.Source },
+            new Chunk { Text = "b", Origin = doc.Source },
+            new Chunk { Text = "c", Origin = doc.Source }
+        };
+        _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(chunks));
+        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+
+        IEnumerable<Chunk>? upserted = null;
+        _vectorStore.When(x => x.UpsertAsync(Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
+            .Do(x => upserted = x.Arg<IEnumerable<Chunk>>().ToList());
+
+        await _pipeline.IngestAsync(doc);
+
+        upserted!.Select(c => c.ChunkIndex).Should().Equal(0, 1, 2);
     }
 
     [Fact]
@@ -101,7 +127,8 @@ public class RagPipelineTests
     [Fact]
     public async Task QueryAsync_ReturnsResultsFromRetriever()
     {
-        var expected = new[] { new SearchResult(new Chunk { Text = "result" }, 0.9f) };
+        var origin = new TestDocument("result").Source;
+        var expected = new[] { new SearchResult(new Chunk { Text = "result", Origin = origin }, 0.9f) };
         _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
         _retriever.RetrieveAsync(Arg.Any<float[]>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
             .Returns(expected);

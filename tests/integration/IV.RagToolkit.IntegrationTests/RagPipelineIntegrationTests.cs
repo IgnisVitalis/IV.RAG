@@ -51,9 +51,9 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
         };
         var pipeline = CreatePipeline(PostgresContainerFixture.NewTable(), FakeEmbedder.FromDictionary(embeddings));
 
-        await pipeline.IngestAsync(new Document("cats are animals"));
-        await pipeline.IngestAsync(new Document("dogs are animals"));
-        await pipeline.IngestAsync(new Document("cars are vehicles"));
+        await pipeline.IngestAsync(new TestDocument("cats are animals", documentId: "cats"));
+        await pipeline.IngestAsync(new TestDocument("dogs are animals", documentId: "dogs"));
+        await pipeline.IngestAsync(new TestDocument("cars are vehicles", documentId: "cars"));
 
         var results = await pipeline.QueryAsync("what are cats?", new RetrievalOptions { TopK = 3, MinScore = -1f });
 
@@ -74,8 +74,8 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
         };
         var pipeline = CreatePipeline(PostgresContainerFixture.NewTable(), FakeEmbedder.FromDictionary(embeddings));
 
-        await pipeline.IngestAsync(new Document("cats are animals"));
-        await pipeline.IngestAsync(new Document("cars are vehicles"));
+        await pipeline.IngestAsync(new TestDocument("cats are animals", documentId: "cats"));
+        await pipeline.IngestAsync(new TestDocument("cars are vehicles", documentId: "cars"));
 
         // Default MinScore = 0.0 — "cars" (sim = 0.0) should be excluded
         var results = await pipeline.QueryAsync("what are cats?");
@@ -95,12 +95,31 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
         };
         var pipeline = CreatePipeline(PostgresContainerFixture.NewTable(), FakeEmbedder.FromDictionary(embeddings));
 
-        await pipeline.IngestAsync(new Document("cats are animals"));
-        await pipeline.IngestAsync(new Document("dogs are animals"));
-        await pipeline.IngestAsync(new Document("cars are vehicles"));
+        await pipeline.IngestAsync(new TestDocument("cats are animals", documentId: "cats"));
+        await pipeline.IngestAsync(new TestDocument("dogs are animals", documentId: "dogs"));
+        await pipeline.IngestAsync(new TestDocument("cars are vehicles", documentId: "cars"));
 
         var results = await pipeline.QueryAsync("what are cats?", new RetrievalOptions { TopK = 2, MinScore = -1f });
 
         results.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task IngestAndQuery_RetrievedChunksHaveOriginAndChunkIndex()
+    {
+        var embeddings = new Dictionary<string, float[]>
+        {
+            ["cats are animals"] = [1f, 0f, 0f],
+            ["what are cats?"]   = [1f, 0f, 0f]
+        };
+        var pipeline = CreatePipeline(PostgresContainerFixture.NewTable(), FakeEmbedder.FromDictionary(embeddings));
+        var doc = new TestDocument("cats are animals", documentId: "cats");
+
+        await pipeline.IngestAsync(doc);
+
+        var results = await pipeline.QueryAsync("what are cats?", new RetrievalOptions { TopK = 1, MinScore = -1f });
+
+        results[0].Chunk.Origin.Should().Be(doc.Source);
+        results[0].Chunk.ChunkIndex.Should().Be(0);
     }
 }

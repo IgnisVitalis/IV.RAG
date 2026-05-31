@@ -4,10 +4,23 @@ Next steps for future sessions, grouped by theme. No particular order within gro
 
 ## v0.2 — Core pipeline improvements
 
-- [ ] **`SourceId` on `Document` and `Chunk`**
-  First-class source document reference. Propagated automatically during ingestion.
-  Enables filtering by source and deletion of all chunks belonging to a document.
-  Add `DeleteBySourceAsync(string sourceId)` to `IVectorStore`.
+- [x] **`Document.Origin` on `Document` and `Chunk`**
+  First-class provenance: `(SourceId: Guid, DocumentType: string, DocumentId: string)`.
+  Propagated automatically during ingestion. `ChunkIndex` (0-based) set by pipeline.
+  `IVectorStore.DeleteByDocumentAsync(Document.Origin)` added. Postgres stores all origin
+  fields as NOT NULL columns with an index.
+
+- [ ] **Delete-before-insert in `IngestAsync`**
+  Call `DeleteByDocumentAsync(document.Source)` before embedding and upserting chunks.
+  Makes re-ingestion idempotent: stale chunks from shorter or re-chunked documents are
+  removed automatically. Current gap: re-ingesting a changed document leaves old chunks
+  in the store.
+
+- [ ] **Atomic document replacement**
+  The delete-before-insert approach has a brief window where a concurrent query sees
+  zero chunks for a document. Investigate wrapping delete + upsert in a single DB
+  transaction. Requires either exposing transaction support on `IVectorStore` or
+  handling it internally in `PostgresVectorStore`.
 
 - [ ] **Metadata filtering in retrieval**
   Extend `RetrievalOptions` with a `MetadataFilter` property.

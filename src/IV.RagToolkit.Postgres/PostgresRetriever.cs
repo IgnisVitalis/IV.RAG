@@ -29,7 +29,8 @@ public sealed class PostgresRetriever : IRetriever
         // <=> is cosine distance [0, 2]; converting to cosine similarity [-1, 1]
         // Uses > (not >=) so MinScore = 0.0 excludes orthogonal chunks (score exactly 0)
         cmd.CommandText = $"""
-            SELECT id, text, metadata, 1 - (embedding <=> @embedding) AS score
+            SELECT id, text, metadata, 1 - (embedding <=> @embedding) AS score,
+                   source_id, document_type, document_id, chunk_index
             FROM {_tableName}
             WHERE 1 - (embedding <=> @embedding) > @minScore
             ORDER BY embedding <=> @embedding
@@ -49,11 +50,18 @@ public sealed class PostgresRetriever : IRetriever
                 ? null
                 : JsonSerializer.Deserialize<Dictionary<string, object>>(reader.GetString(2)) as IReadOnlyDictionary<string, object>;
 
+            var origin = new Document.Origin(
+                reader.GetGuid(4),
+                reader.GetString(5),
+                reader.GetString(6));
+
             var chunk = new Chunk
             {
                 Id = reader.GetString(0),
                 Text = reader.GetString(1),
-                Metadata = metadata
+                Metadata = metadata,
+                Origin = origin,
+                ChunkIndex = reader.IsDBNull(7) ? null : reader.GetInt32(7)
             };
 
             results.Add(new SearchResult(chunk, (float)reader.GetDouble(3)));

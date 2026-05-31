@@ -13,7 +13,7 @@ public class FixedSizeChunkerTests
     {
         var chunker = Create(chunkSize: 100);
 
-        var chunks = await chunker.ChunkAsync(new Document("short")).ToListAsync();
+        var chunks = await chunker.ChunkAsync(new TestDocument("short")).ToListAsync();
 
         chunks.Should().HaveCount(1);
         chunks[0].Text.Should().Be("short");
@@ -25,7 +25,7 @@ public class FixedSizeChunkerTests
         var chunker = Create(chunkSize: 5);
         var text = "12345";
 
-        var chunks = await chunker.ChunkAsync(new Document(text)).ToListAsync();
+        var chunks = await chunker.ChunkAsync(new TestDocument(text)).ToListAsync();
 
         chunks.Should().HaveCount(1);
         chunks[0].Text.Should().Be(text);
@@ -36,7 +36,7 @@ public class FixedSizeChunkerTests
     {
         var chunker = Create(chunkSize: 5, overlap: 0);
 
-        var chunks = await chunker.ChunkAsync(new Document("1234567890")).ToListAsync();
+        var chunks = await chunker.ChunkAsync(new TestDocument("1234567890")).ToListAsync();
 
         chunks.Should().HaveCount(2);
         chunks[0].Text.Should().Be("12345");
@@ -49,7 +49,7 @@ public class FixedSizeChunkerTests
         // step = 5 - 2 = 3 → positions 0, 3, 6
         var chunker = Create(chunkSize: 5, overlap: 2);
 
-        var chunks = await chunker.ChunkAsync(new Document("1234567890")).ToListAsync();
+        var chunks = await chunker.ChunkAsync(new TestDocument("1234567890")).ToListAsync();
 
         chunks[0].Text.Should().Be("12345");
         chunks[1].Text.Should().Be("45678"); // shares "45" with previous
@@ -61,7 +61,7 @@ public class FixedSizeChunkerTests
     {
         var chunker = Create(chunkSize: 4, overlap: 0);
 
-        var chunks = await chunker.ChunkAsync(new Document("123456789")).ToListAsync();
+        var chunks = await chunker.ChunkAsync(new TestDocument("123456789")).ToListAsync();
 
         chunks.Last().Text.Should().Be("9");
     }
@@ -72,9 +72,20 @@ public class FixedSizeChunkerTests
         var chunker = Create(chunkSize: 100);
         var metadata = new Dictionary<string, object> { ["source"] = "doc.txt" };
 
-        var chunks = await chunker.ChunkAsync(new Document("text", metadata)).ToListAsync();
+        var chunks = await chunker.ChunkAsync(new TestDocument("text", metadata: metadata)).ToListAsync();
 
         chunks[0].Metadata.Should().BeEquivalentTo(metadata);
+    }
+
+    [Fact]
+    public async Task ChunkAsync_PropagatesDocumentOrigin()
+    {
+        var chunker = Create(chunkSize: 100);
+        var doc = new TestDocument("text");
+
+        var chunks = await chunker.ChunkAsync(doc).ToListAsync();
+
+        chunks[0].Origin.Should().Be(doc.Source);
     }
 
     [Fact]
@@ -82,7 +93,7 @@ public class FixedSizeChunkerTests
     {
         var chunker = Create(chunkSize: 100);
 
-        var chunks = await chunker.ChunkAsync(new Document("text")).ToListAsync();
+        var chunks = await chunker.ChunkAsync(new TestDocument("text")).ToListAsync();
 
         chunks[0].Id.Should().BeNull();
         chunks[0].Embedding.Should().BeNull();

@@ -6,6 +6,8 @@ Instructions for Claude Code when working in this repository.
 
 `IV.RagToolkit` — a .NET 9 NuGet toolkit providing infrastructure and base classes for RAG (Retrieval-Augmented Generation) pipelines. Designed to be composable: consumers swap providers via DI without touching pipeline logic.
 
+**Development stage:** pre-1.0, active development. Backward compatibility is not required — breaking changes to any layer including `Abstractions` are acceptable.
+
 ## Solution structure
 
 ```
@@ -57,5 +59,5 @@ dotnet pack src/IV.RagToolkit.Abstractions/ -c Release
 - If a request contains a question, discuss before modifying code
 - Be a constructive skeptic on design decisions
 - Prefer small, focused changes
-- Avoid breaking changes to `Abstractions` without explicit approval — it is the public contract
+- Breaking changes to `Abstractions` are acceptable — the project is pre-1.0
 - Use existing patterns and naming conventions in the repo

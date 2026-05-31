@@ -65,10 +65,10 @@ public sealed class RagPipelineE2ETests : IClassFixture<PostgresContainerFixture
     {
         var pipeline = CreatePipeline(PostgresContainerFixture.NewTable());
 
-        await pipeline.IngestAsync(new Document("Cats are independent and curious domestic animals"));
-        await pipeline.IngestAsync(new Document("Dogs are loyal and friendly companion animals"));
-        await pipeline.IngestAsync(new Document("Python is a high-level programming language"));
-        await pipeline.IngestAsync(new Document("JavaScript is used for web development"));
+        await pipeline.IngestAsync(new TestDocument("Cats are independent and curious domestic animals", documentId: "cats"));
+        await pipeline.IngestAsync(new TestDocument("Dogs are loyal and friendly companion animals", documentId: "dogs"));
+        await pipeline.IngestAsync(new TestDocument("Python is a high-level programming language", documentId: "python"));
+        await pipeline.IngestAsync(new TestDocument("JavaScript is used for web development", documentId: "js"));
 
         var results = await pipeline.QueryAsync(
             "Tell me about cats",
@@ -86,7 +86,7 @@ public sealed class RagPipelineE2ETests : IClassFixture<PostgresContainerFixture
     public async Task IngestAndQuery_SameDocumentIngestedTwice_BothChunksStoredAndRetrievable()
     {
         var pipeline = CreatePipeline(PostgresContainerFixture.NewTable());
-        var doc = new Document("Cats are domestic animals");
+        var doc = new TestDocument("Cats are domestic animals");
 
         await pipeline.IngestAsync(doc);
         await pipeline.IngestAsync(doc);

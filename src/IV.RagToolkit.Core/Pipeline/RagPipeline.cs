@@ -36,10 +36,11 @@ public sealed class RagPipeline : IRagPipeline
         _logger.LogDebug("Ingesting document ({Length} chars).", document.Text.Length);
 
         var chunks = new List<Chunk>();
+        var chunkIndex = 0;
         await foreach (var chunk in _chunker.ChunkAsync(document, cancellationToken))
         {
             var embedding = await _embedder.EmbedAsync(chunk.Text, cancellationToken);
-            chunks.Add(chunk with { Id = Guid.NewGuid().ToString(), Embedding = embedding });
+            chunks.Add(chunk with { Id = Guid.NewGuid().ToString(), ChunkIndex = chunkIndex++, Embedding = embedding });
         }
 
         await _vectorStore.UpsertAsync(chunks, cancellationToken);

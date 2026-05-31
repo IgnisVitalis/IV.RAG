@@ -8,4 +8,7 @@ public interface IVectorStore
 
     /// <summary>Removes chunks by their identifiers. Silently ignores unknown ids.</summary>
     Task DeleteAsync(IEnumerable<string> ids, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes all chunks belonging to the document identified by <paramref name="origin"/>.</summary>
+    Task DeleteByDocumentAsync(Document.Origin origin, CancellationToken cancellationToken = default);
 }

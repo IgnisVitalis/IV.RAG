@@ -33,12 +33,16 @@ public sealed class PostgresVectorStore : IVectorStore
             await using var cmd = conn.CreateCommand();
             cmd.Transaction = tx;
             cmd.CommandText = $"""
-                INSERT INTO {_options.TableName} (id, text, embedding, metadata)
-                VALUES (@id, @text, @embedding, @metadata::jsonb)
+                INSERT INTO {_options.TableName} (id, text, embedding, metadata, source_id, document_type, document_id, chunk_index)
+                VALUES (@id, @text, @embedding, @metadata::jsonb, @sourceId, @documentType, @documentId, @chunkIndex)
                 ON CONFLICT (id) DO UPDATE SET
                     text = EXCLUDED.text,
                     embedding = EXCLUDED.embedding,
-                    metadata = EXCLUDED.metadata
+                    metadata = EXCLUDED.metadata,
+                    source_id = EXCLUDED.source_id,
+                    document_type = EXCLUDED.document_type,
+                    document_id = EXCLUDED.document_id,
+                    chunk_index = EXCLUDED.chunk_index
                 """;
 
             cmd.Parameters.AddWithValue("id", chunk.Id!);
@@ -46,6 +50,11 @@ public sealed class PostgresVectorStore : IVectorStore
             cmd.Parameters.AddWithValue("embedding", new Vector(chunk.Embedding!));
             cmd.Parameters.AddWithValue("metadata", NpgsqlDbType.Jsonb,
                 chunk.Metadata is not null ? (object)JsonSerializer.Serialize(chunk.Metadata) : DBNull.Value);
+            cmd.Parameters.Add(new NpgsqlParameter("sourceId", NpgsqlDbType.Uuid) { Value = chunk.Origin.SourceId });
+            cmd.Parameters.AddWithValue("documentType", chunk.Origin.DocumentType);
+            cmd.Parameters.AddWithValue("documentId", chunk.Origin.DocumentId);
+            cmd.Parameters.AddWithValue("chunkIndex", NpgsqlDbType.Integer,
+                chunk.ChunkIndex.HasValue ? (object)chunk.ChunkIndex.Value : DBNull.Value);
 
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -62,6 +71,22 @@ public sealed class PostgresVectorStore : IVectorStore
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public async Task DeleteByDocumentAsync(Document.Origin origin, CancellationToken cancellationToken = default)
+    {
+        await using var cmd = _dataSource.CreateCommand();
+        cmd.CommandText = $"""
+            DELETE FROM {_options.TableName}
+            WHERE source_id = @sourceId
+              AND document_type = @documentType
+              AND document_id = @documentId
+            """;
+        cmd.Parameters.Add(new NpgsqlParameter("sourceId", NpgsqlDbType.Uuid) { Value = origin.SourceId });
+        cmd.Parameters.AddWithValue("documentType", origin.DocumentType);
+        cmd.Parameters.AddWithValue("documentId", origin.DocumentId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
         if (Interlocked.Exchange(ref _schemaInitialized, 1) != 0)
@@ -70,11 +95,17 @@ public sealed class PostgresVectorStore : IVectorStore
         await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = $"""
             CREATE TABLE IF NOT EXISTS {_options.TableName} (
-                id        TEXT PRIMARY KEY,
-                text      TEXT NOT NULL,
-                embedding vector({_options.VectorDimension}) NOT NULL,
-                metadata  JSONB
+                id            TEXT PRIMARY KEY,
+                text          TEXT NOT NULL,
+                embedding     vector({_options.VectorDimension}) NOT NULL,
+                metadata      JSONB,
+                source_id     UUID NOT NULL,
+                document_type TEXT NOT NULL,
+                document_id   TEXT NOT NULL,
+                chunk_index   INT
             );
+            CREATE INDEX IF NOT EXISTS {_options.TableName}_origin_idx
+                ON {_options.TableName} (source_id, document_type, document_id);
             """;
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);

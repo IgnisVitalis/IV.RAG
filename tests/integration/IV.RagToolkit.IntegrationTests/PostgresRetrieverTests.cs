@@ -18,6 +18,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     private static readonly float[] VectorDogs = [0.9f, 0.436f, 0f];
     private static readonly float[] VectorCars = [0f, 1f, 0f];
 
+    private static readonly Document.Origin TestOrigin =
+        new(new Guid("a0000000-0000-0000-0000-000000000001"), "Test", "doc-1");
+
     public PostgresRetrieverTests(PostgresContainerFixture fixture) => _fixture = fixture;
 
     private async Task<(PostgresVectorStore Store, PostgresRetriever Retriever)> CreateAndSeedAsync(string tableName)
@@ -33,9 +36,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
 
         await store.UpsertAsync(
         [
-            new Chunk { Id = "cats", Text = "cats are animals", Embedding = VectorCats },
-            new Chunk { Id = "dogs", Text = "dogs are animals", Embedding = VectorDogs },
-            new Chunk { Id = "cars", Text = "cars are vehicles", Embedding = VectorCars }
+            new Chunk { Id = "cats", Text = "cats are animals", Embedding = VectorCats, Origin = TestOrigin },
+            new Chunk { Id = "dogs", Text = "dogs are animals", Embedding = VectorDogs, Origin = TestOrigin },
+            new Chunk { Id = "cars", Text = "cars are vehicles", Embedding = VectorCars, Origin = TestOrigin }
         ]);
 
         return (store, retriever);
