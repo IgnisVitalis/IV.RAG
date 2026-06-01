@@ -90,11 +90,16 @@ Console.WriteLine(answer);
 
 ### Replace a document
 
-When a document changes, delete its old chunks before re-ingesting:
+Re-ingesting a document atomically replaces all its chunks — stale chunks from a shorter or re-chunked document are removed automatically:
+
+```csharp
+await pipeline.IngestAsync(updatedDoc); // previous chunks for updatedDoc.Source are replaced atomically
+```
+
+To remove a document from the index entirely:
 
 ```csharp
 await vectorStore.DeleteByDocumentAsync(doc.Source);
-await pipeline.IngestAsync(updatedDoc);
 ```
 
 ## Chunking strategies
@@ -200,7 +205,7 @@ public sealed record Origin(Guid SourceId, string DocumentType, string DocumentI
 | `DocumentType` | Identifies the document category within that system (`"Invoice"`, `"Contract"`) |
 | `DocumentId` | Identifies the specific document instance (`"INV-001"`) |
 
-Origin is propagated automatically to every `Chunk` produced during ingestion and stored as dedicated columns in the vector store. This enables `DeleteByDocumentAsync` to atomically remove all chunks belonging to a specific document.
+Origin is propagated automatically to every `Chunk` produced during ingestion and stored as dedicated columns in the vector store. Re-ingesting a document replaces all its chunks atomically via `IVectorStore.SetAsync`. To remove a document without re-ingesting, call `IVectorStore.DeleteByDocumentAsync`.
 
 ### Chunk enrichment
 

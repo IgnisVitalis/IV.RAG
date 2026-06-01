@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-01
+
+### Added
+
+- `IVectorStore.SetAsync(Document.Origin, IEnumerable<Chunk>)` (`Abstractions`) — atomically replaces all chunks for a document origin in a single transaction: deletes existing chunks for the origin, then inserts the new set. Validates that all chunk origins match the target origin and that each chunk has a non-null, non-empty `Id` and non-null `Embedding` before touching the database.
+- `RetrievalPipeline.IngestAsync` now uses `SetAsync` — re-ingesting a document atomically replaces its chunks. Stale chunks from a shorter or re-chunked document are removed automatically; no manual delete step required.
+
+### Removed
+
+- **Breaking:** `IVectorStore.UpsertAsync` removed. Use `SetAsync` for full document replacement. `DeleteAsync` (by chunk IDs) and `DeleteByDocumentAsync` (by origin) remain for targeted deletions.
+
 ## [0.4.0] - 2026-06-01
 
 ### Added

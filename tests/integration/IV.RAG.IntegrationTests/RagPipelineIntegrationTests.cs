@@ -146,6 +146,26 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
     }
 
     [Fact]
+    public async Task ReIngest_SameDocument_ReplacesContent()
+    {
+        var embeddings = new Dictionary<string, float[]>
+        {
+            ["original text"]  = [1f, 0f, 0f],
+            ["updated text"]   = [1f, 0f, 0f],
+            ["what is it?"]    = [1f, 0f, 0f]
+        };
+        var pipeline = CreatePipeline(PostgresContainerFixture.NewTable(), FakeEmbedder.FromDictionary(embeddings));
+
+        await pipeline.IngestAsync(new TestDocument("original text", documentId: "doc-x"));
+        await pipeline.IngestAsync(new TestDocument("updated text", documentId: "doc-x"));
+
+        var results = await pipeline.QueryAsync("what is it?", new RetrievalOptions { TopK = 10, MinScore = -1f });
+
+        results.Should().HaveCount(1);
+        results[0].Chunk.Text.Should().Be("updated text");
+    }
+
+    [Fact]
     public async Task IngestAndQuery_ViaDI_DispatcherRoutesPlainTextDocument()
     {
         var embeddings = new Dictionary<string, float[]>

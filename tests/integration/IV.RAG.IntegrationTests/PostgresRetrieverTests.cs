@@ -34,7 +34,7 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
         var store = new PostgresVectorStore(_fixture.DataSource, options);
         var retriever = new PostgresRetriever(_fixture.DataSource, options);
 
-        await store.UpsertAsync(
+        await store.SetAsync(TestOrigin,
         [
             new Chunk { Id = "cats", Text = "cats are animals", Embedding = VectorCats, Origin = TestOrigin },
             new Chunk { Id = "dogs", Text = "dogs are animals", Embedding = VectorDogs, Origin = TestOrigin },
@@ -116,7 +116,7 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
         });
         var store = new PostgresVectorStore(_fixture.DataSource, options);
         var retriever = new PostgresRetriever(_fixture.DataSource, options);
-        await store.UpsertAsync([]); // trigger schema creation
+        await store.SetAsync(TestOrigin, []); // trigger schema creation
 
         var results = await retriever.RetrieveAsync(VectorCats, new RetrievalOptions { TopK = 10 });
 

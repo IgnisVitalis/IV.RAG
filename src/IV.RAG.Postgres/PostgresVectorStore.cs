@@ -21,30 +21,52 @@ public sealed class PostgresVectorStore : IVectorStore
     }
 
     /// <inheritdoc/>
-    public async Task UpsertAsync(IEnumerable<Chunk> chunks, CancellationToken cancellationToken = default)
+    public async Task SetAsync(Document.Origin origin, IEnumerable<Chunk> chunks, CancellationToken cancellationToken = default)
     {
+        var chunkList = chunks.ToList();
+
+        var mismatch = chunkList.Find(c => c.Origin != origin);
+        if (mismatch is not null)
+            throw new ArgumentException(
+                $"Chunk origin '{mismatch.Origin}' does not match the target origin '{origin}'.",
+                nameof(chunks));
+
+        var missingId = chunkList.Find(c => string.IsNullOrEmpty(c.Id));
+        if (missingId is not null)
+            throw new ArgumentException("All chunks must have a non-null, non-empty Id.", nameof(chunks));
+
+        var missingEmbedding = chunkList.Find(c => c.Embedding is null);
+        if (missingEmbedding is not null)
+            throw new ArgumentException("All chunks must have a non-null Embedding.", nameof(chunks));
+
         await EnsureSchemaAsync(cancellationToken);
 
         await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var tx = await conn.BeginTransactionAsync(cancellationToken);
 
-        foreach (var chunk in chunks)
+        await using (var deleteCmd = conn.CreateCommand())
+        {
+            deleteCmd.Transaction = tx;
+            deleteCmd.CommandText = $"""
+                DELETE FROM {_options.TableName}
+                WHERE source_id = @sourceId
+                  AND document_type = @documentType
+                  AND document_id = @documentId
+                """;
+            deleteCmd.Parameters.Add(new NpgsqlParameter("sourceId", NpgsqlDbType.Uuid) { Value = origin.SourceId });
+            deleteCmd.Parameters.AddWithValue("documentType", origin.DocumentType);
+            deleteCmd.Parameters.AddWithValue("documentId", origin.DocumentId);
+            await deleteCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var chunk in chunkList)
         {
             await using var cmd = conn.CreateCommand();
             cmd.Transaction = tx;
             cmd.CommandText = $"""
                 INSERT INTO {_options.TableName} (id, text, embedding, metadata, source_id, document_type, document_id, chunk_index)
                 VALUES (@id, @text, @embedding, @metadata::jsonb, @sourceId, @documentType, @documentId, @chunkIndex)
-                ON CONFLICT (id) DO UPDATE SET
-                    text = EXCLUDED.text,
-                    embedding = EXCLUDED.embedding,
-                    metadata = EXCLUDED.metadata,
-                    source_id = EXCLUDED.source_id,
-                    document_type = EXCLUDED.document_type,
-                    document_id = EXCLUDED.document_id,
-                    chunk_index = EXCLUDED.chunk_index
                 """;
-
             cmd.Parameters.AddWithValue("id", chunk.Id!);
             cmd.Parameters.AddWithValue("text", chunk.Text);
             cmd.Parameters.AddWithValue("embedding", new Vector(chunk.Embedding!));
@@ -55,7 +77,6 @@ public sealed class PostgresVectorStore : IVectorStore
             cmd.Parameters.AddWithValue("documentId", chunk.Origin.DocumentId);
             cmd.Parameters.AddWithValue("chunkIndex", NpgsqlDbType.Integer,
                 chunk.ChunkIndex.HasValue ? (object)chunk.ChunkIndex.Value : DBNull.Value);
-
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 

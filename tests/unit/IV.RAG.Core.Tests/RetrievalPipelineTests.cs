@@ -18,7 +18,7 @@ public class RetrievalPipelineTests
     }
 
     [Fact]
-    public async Task IngestAsync_EmbedsEachChunk_ThenUpsertsAll()
+    public async Task IngestAsync_EmbedsEachChunk_ThenReplacesAll()
     {
         var doc = new TestDocument("text");
         var chunk = new Chunk { Text = "text", Origin = doc.Source };
@@ -29,7 +29,8 @@ public class RetrievalPipelineTests
 
         await _pipeline.IngestAsync(doc);
 
-        await _vectorStore.Received(1).UpsertAsync(
+        await _vectorStore.Received(1).SetAsync(
+            doc.Source,
             Arg.Is<IEnumerable<Chunk>>(c => c.Single().Embedding == embedding),
             Arg.Any<CancellationToken>());
     }
@@ -41,13 +42,13 @@ public class RetrievalPipelineTests
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
         _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
 
-        IEnumerable<Chunk>? upserted = null;
-        _vectorStore.When(x => x.UpsertAsync(Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
-            .Do(x => upserted = x.Arg<IEnumerable<Chunk>>().ToList());
+        IEnumerable<Chunk>? replaced = null;
+        _vectorStore.When(x => x.SetAsync(Arg.Any<Document.Origin>(), Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
+            .Do(x => replaced = x.ArgAt<IEnumerable<Chunk>>(1).ToList());
 
         await _pipeline.IngestAsync(doc);
 
-        upserted!.Single().Id.Should().NotBeNullOrEmpty();
+        replaced!.Single().Id.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -62,13 +63,13 @@ public class RetrievalPipelineTests
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(chunks));
         _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
 
-        IEnumerable<Chunk>? upserted = null;
-        _vectorStore.When(x => x.UpsertAsync(Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
-            .Do(x => upserted = x.Arg<IEnumerable<Chunk>>().ToList());
+        IEnumerable<Chunk>? replaced = null;
+        _vectorStore.When(x => x.SetAsync(Arg.Any<Document.Origin>(), Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
+            .Do(x => replaced = x.ArgAt<IEnumerable<Chunk>>(1).ToList());
 
         await _pipeline.IngestAsync(doc);
 
-        upserted!.Select(c => c.Id).Should().OnlyHaveUniqueItems();
+        replaced!.Select(c => c.Id).Should().OnlyHaveUniqueItems();
     }
 
     [Fact]
@@ -84,13 +85,28 @@ public class RetrievalPipelineTests
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(chunks));
         _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
 
-        IEnumerable<Chunk>? upserted = null;
-        _vectorStore.When(x => x.UpsertAsync(Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
-            .Do(x => upserted = x.Arg<IEnumerable<Chunk>>().ToList());
+        IEnumerable<Chunk>? replaced = null;
+        _vectorStore.When(x => x.SetAsync(Arg.Any<Document.Origin>(), Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
+            .Do(x => replaced = x.ArgAt<IEnumerable<Chunk>>(1).ToList());
 
         await _pipeline.IngestAsync(doc);
 
-        upserted!.Select(c => c.ChunkIndex).Should().Equal(0, 1, 2);
+        replaced!.Select(c => c.ChunkIndex).Should().Equal(0, 1, 2);
+    }
+
+    [Fact]
+    public async Task IngestAsync_PassesDocumentOriginToReplace()
+    {
+        var doc = new TestDocument("text");
+        _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
+        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+
+        await _pipeline.IngestAsync(doc);
+
+        await _vectorStore.Received(1).SetAsync(
+            doc.Source,
+            Arg.Any<IEnumerable<Chunk>>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

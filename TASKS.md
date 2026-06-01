@@ -4,26 +4,15 @@ Backlog ordered by priority. Complete items are removed.
 
 ## High priority
 
-- [ ] **Delete-before-insert in `IngestAsync`**
-  Call `DeleteByDocumentAsync(document.Source)` before embedding and upserting chunks.
-  Makes re-ingestion idempotent: stale chunks from shorter or re-chunked documents are
-  removed automatically. Current gap: re-ingesting a changed document leaves old chunks
-  in the store.
-
-- [ ] **`IGenerator` interface**
-  Takes a query and a list of retrieved chunks, returns a generated answer string.
-  Add `AnswerAsync` to `IRagPipeline` as the full RAG loop: retrieve + generate.
-  Add `OllamaGenerator` backed by `/api/chat` endpoint.
-
-- [ ] **Atomic document replacement**
-  The delete-before-insert approach has a brief window where a concurrent query sees
-  zero chunks for a document. Investigate wrapping delete + upsert in a single DB
-  transaction. Requires either exposing transaction support on `IVectorStore` or
-  handling it internally in `PostgresVectorStore`.
-
 - [ ] **Metadata filtering in retrieval**
   Extend `RetrievalOptions` with a `MetadataFilter` property.
   Filter chunks by stored metadata values during similarity search.
+
+- [ ] **Origin-based scoping in retrieval**
+  Extend `RetrievalOptions` with optional `SourceId`, `DocumentType`, and `DocumentId` fields.
+  When set, the retrieval query adds a WHERE clause on the corresponding origin columns.
+  This is the toolkit's access control primitive: the application resolves which scope
+  the current user is allowed and passes it to options — the toolkit enforces it in SQL.
 
 ## Medium priority
 

@@ -41,7 +41,7 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline
             chunks.Add(chunk with { Id = Guid.NewGuid().ToString(), ChunkIndex = chunkIndex++, Embedding = embedding });
         }
 
-        await _vectorStore.UpsertAsync(chunks, cancellationToken);
+        await _vectorStore.SetAsync(document.Source, chunks, cancellationToken);
         _logger.LogDebug("Ingested {Count} chunks.", chunks.Count);
     }
 
