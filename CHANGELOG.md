@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-03
+
+### Added
+
+- `SchemaManagementMode` enum (`IV.RAG.Postgres`) — `Auto`, `None`.
+- `PostgresOptions.SchemaManagement` (default `Auto`). `None` skips all runtime structural DDL for explicit-migration / least-privilege deployments; the required tables must be provisioned manually (a missing table fails fast with a clear error — see the README "Manual provisioning DDL"). Under `None` the vector store still upserts into `{TableName}_models` to resolve each chunk's model id and still detects model mismatches, so the runtime account needs `INSERT`/`SELECT` on that table.
+
+### Changed
+
+- Schema DDL in `PostgresVectorStore.EnsureSchemaAsync` now runs in a single transaction guarded by a PostgreSQL transaction-scoped advisory lock (`pg_advisory_xact_lock`, keyed on the table name), so concurrent application instances starting against the same database serialize their DDL instead of racing on the destructive dimension-change path (`ALTER COLUMN … USING NULL`). The model-mismatch exception is thrown *after* the transaction commits, so a dimension change still persists for `IEmbeddingMigrator`.
+- `PostgresQueryCache.EnsureSchemaAsync` is now guarded by a `SemaphoreSlim(1,1)` in-process lock and the same cross-process advisory lock (previously only a `Volatile` flag, which let concurrent first calls both run the `TRUNCATE`/`ALTER` adaptation). `PostgresQueryCache` now implements `IDisposable` (disposes the semaphore).
+
 ## [0.10.0] - 2026-06-03
 
 ### Added

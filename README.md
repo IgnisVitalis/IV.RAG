@@ -214,6 +214,78 @@ By default `PostgresVectorStore` creates an **HNSW** index on the `embedding` co
 - **Bulk loads.** Building the index is faster *after* a bulk insert than incrementally during one. When loading a large existing corpus for the first time, the initial index build runs synchronously on the first store operation.
 - **Dimension changes.** When the embedding dimension changes (see above), the index is dropped and recreated automatically at the new size.
 
+## Schema management
+
+By default (`SchemaManagement = Auto`) the provider creates and migrates its tables and indexes on
+first use. Schema DDL is serialized across application instances with a PostgreSQL transaction-scoped
+advisory lock, so starting many instances concurrently against the same database is safe — only one
+performs the DDL and the rest find the schema already present.
+
+For deployments that provision schema via explicit migrations and run under least-privilege accounts,
+set `SchemaManagement = None` to skip all runtime structural DDL:
+
+```csharp
+.AddPostgresVectorStore(o =>
+{
+    o.ConnectionString = "...";
+    o.SchemaManagement = SchemaManagementMode.None; // never issue CREATE/ALTER/index DDL
+})
+```
+
+Under `None` the required tables must already exist (a missing table fails fast with a clear error).
+The vector store still upserts into `{TableName}_models` to resolve each chunk's model id and still
+detects model mismatches, so the runtime account needs `INSERT`/`SELECT` on that table — only
+`CREATE`/`ALTER`/index creation are skipped.
+
+### Manual provisioning DDL
+
+Run this once during provisioning (replace `768` with your embedding model's dimension, and
+`english` with your `TextSearchLanguage`):
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Model registry (the runtime upserts into this table even under SchemaManagement = None)
+CREATE TABLE chunks_models (
+    id         SERIAL PRIMARY KEY,
+    provider   TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    dimensions INT  NOT NULL,
+    UNIQUE (provider, model_name, dimensions)
+);
+
+CREATE TABLE chunks (
+    id            TEXT PRIMARY KEY,
+    text          TEXT NOT NULL,
+    embedding     vector(768) NOT NULL,
+    metadata      JSONB,
+    source_id     UUID NOT NULL,
+    document_type TEXT NOT NULL,
+    document_id   TEXT NOT NULL,
+    chunk_index   INT,
+    model_id      INT NOT NULL REFERENCES chunks_models(id),
+    text_search   TSVECTOR GENERATED ALWAYS AS (to_tsvector('english'::regconfig, text)) STORED
+);
+CREATE INDEX chunks_origin_idx      ON chunks (source_id, document_type, document_id);
+CREATE INDEX chunks_model_id_idx    ON chunks (model_id);
+CREATE INDEX chunks_text_search_idx ON chunks USING GIN (text_search);
+CREATE INDEX chunks_embedding_idx   ON chunks USING hnsw (embedding vector_cosine_ops);
+
+-- Only if you use AddPostgresQueryCache:
+CREATE TABLE query_cache (
+    id                  BIGSERIAL PRIMARY KEY,
+    query_embedding     vector(768) NOT NULL,
+    options_hash        TEXT NOT NULL,
+    results             JSONB NOT NULL,
+    document_origins    TEXT[] NOT NULL,
+    expires_at          TIMESTAMPTZ NOT NULL,
+    embedder_provider   TEXT,
+    embedder_model      TEXT,
+    embedder_dimensions INT
+);
+CREATE INDEX query_cache_expires_idx ON query_cache (expires_at);
+```
+
 ## Quick start
 
 ### Ingest and query

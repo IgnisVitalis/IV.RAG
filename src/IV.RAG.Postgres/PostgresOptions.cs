@@ -23,6 +23,25 @@ public enum VectorIndexType
     IVFFlat
 }
 
+/// <summary>Controls whether the provider issues schema DDL (table/index creation and migration) at runtime.</summary>
+public enum SchemaManagementMode
+{
+    /// <summary>
+    /// The provider creates and migrates its tables and indexes automatically on first use. Schema
+    /// mutations across multiple application instances are serialized with a PostgreSQL advisory lock.
+    /// </summary>
+    Auto,
+
+    /// <summary>
+    /// The provider performs no structural DDL (no <c>CREATE</c>/<c>ALTER</c>/index creation). Use this
+    /// for deployments that provision schema via explicit migrations and run under least-privilege
+    /// accounts. The required tables must already exist (see the README's manual-provisioning section);
+    /// the vector store still upserts into <c>{TableName}_models</c> to resolve each chunk's model id,
+    /// so the runtime account needs <c>INSERT</c> and <c>SELECT</c> on that table.
+    /// </summary>
+    None
+}
+
 /// <summary>Configuration for the Postgres/pgvector provider.</summary>
 public sealed class PostgresOptions
 {
@@ -45,6 +64,13 @@ public sealed class PostgresOptions
     /// Table name used to store query cache entries. Defaults to <c>query_cache</c>.
     /// </summary>
     public string QueryCacheTableName { get; set; } = "query_cache";
+
+    /// <summary>
+    /// Whether the provider issues schema DDL at runtime. Defaults to <see cref="SchemaManagementMode.Auto"/>
+    /// (tables and indexes are created and migrated automatically). Set to <see cref="SchemaManagementMode.None"/>
+    /// for explicit-migration / least-privilege deployments — see <see cref="SchemaManagementMode"/>.
+    /// </summary>
+    public SchemaManagementMode SchemaManagement { get; set; } = SchemaManagementMode.Auto;
 
     /// <summary>
     /// ANN index strategy for the <c>embedding</c> column. Defaults to <see cref="VectorIndexType.Hnsw"/>.

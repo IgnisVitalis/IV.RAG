@@ -8,7 +8,7 @@ using Pgvector;
 namespace IV.RAG;
 
 /// <summary>PostgreSQL-backed implementation of <see cref="IQueryCache"/> using pgvector cosine similarity.</summary>
-public sealed class PostgresQueryCache : IQueryCache
+public sealed class PostgresQueryCache : IQueryCache, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -19,7 +19,9 @@ public sealed class PostgresQueryCache : IQueryCache
     private readonly IEmbedder _embedder;
     private readonly string _tableName;
     private readonly QueryCacheOptions _cacheOptions;
-    private int _schemaInitialized;
+    private readonly SchemaManagementMode _schemaManagement;
+    private readonly SemaphoreSlim _schemaLock = new(1, 1);
+    private volatile bool _schemaInitialized;
 
     /// <summary>Initializes a new instance with the provided data source, embedder, and options.</summary>
     public PostgresQueryCache(
@@ -31,6 +33,7 @@ public sealed class PostgresQueryCache : IQueryCache
         _dataSource = dataSource;
         _embedder = embedder;
         _tableName = postgresOptions.Value.QueryCacheTableName;
+        _schemaManagement = postgresOptions.Value.SchemaManagement;
         _cacheOptions = cacheOptions.Value;
     }
 
@@ -148,41 +151,87 @@ public sealed class PostgresQueryCache : IQueryCache
 
     private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        if (Volatile.Read(ref _schemaInitialized) != 0)
-            return;
+        if (_schemaInitialized) return; // fast path — no lock needed after init
 
-        var dims = _embedder.ModelInfo.Dimensions;
-
-        await using (var cmd = _dataSource.CreateCommand())
+        await _schemaLock.WaitAsync(cancellationToken);
+        try
         {
-            cmd.CommandText = $"""
-                CREATE TABLE IF NOT EXISTS {_tableName} (
-                    id                  BIGSERIAL PRIMARY KEY,
-                    query_embedding     vector({dims}) NOT NULL,
-                    options_hash        TEXT NOT NULL,
-                    results             JSONB NOT NULL,
-                    document_origins    TEXT[] NOT NULL,
-                    expires_at          TIMESTAMPTZ NOT NULL,
-                    embedder_provider   TEXT,
-                    embedder_model      TEXT,
-                    embedder_dimensions INT
-                );
-                ALTER TABLE {_tableName} ADD COLUMN IF NOT EXISTS embedder_provider   TEXT;
-                ALTER TABLE {_tableName} ADD COLUMN IF NOT EXISTS embedder_model      TEXT;
-                ALTER TABLE {_tableName} ADD COLUMN IF NOT EXISTS embedder_dimensions INT;
-                CREATE INDEX IF NOT EXISTS {_tableName}_expires_idx ON {_tableName} (expires_at);
-                """;
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            if (_schemaInitialized) return; // double-check inside lock
+
+            if (_schemaManagement == SchemaManagementMode.None)
+            {
+                await EnsureTableExistsAsync(cancellationToken);
+                _schemaInitialized = true;
+                return;
+            }
+
+            var dims = _embedder.ModelInfo.Dimensions;
+
+            // Serialize DDL across application instances with a transaction-scoped advisory lock
+            // (auto-released on commit). Keyed in SQL to avoid .NET's per-process hash randomization.
+            await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
+            await using var tx = await conn.BeginTransactionAsync(cancellationToken);
+
+            await using (var lockCmd = conn.CreateCommand())
+            {
+                lockCmd.Transaction = tx;
+                lockCmd.CommandText = "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))";
+                lockCmd.Parameters.AddWithValue("key", $"iv.rag.schema:{_tableName}");
+                await lockCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var cmd = conn.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = $"""
+                    CREATE TABLE IF NOT EXISTS {_tableName} (
+                        id                  BIGSERIAL PRIMARY KEY,
+                        query_embedding     vector({dims}) NOT NULL,
+                        options_hash        TEXT NOT NULL,
+                        results             JSONB NOT NULL,
+                        document_origins    TEXT[] NOT NULL,
+                        expires_at          TIMESTAMPTZ NOT NULL,
+                        embedder_provider   TEXT,
+                        embedder_model      TEXT,
+                        embedder_dimensions INT
+                    );
+                    ALTER TABLE {_tableName} ADD COLUMN IF NOT EXISTS embedder_provider   TEXT;
+                    ALTER TABLE {_tableName} ADD COLUMN IF NOT EXISTS embedder_model      TEXT;
+                    ALTER TABLE {_tableName} ADD COLUMN IF NOT EXISTS embedder_dimensions INT;
+                    CREATE INDEX IF NOT EXISTS {_tableName}_expires_idx ON {_tableName} (expires_at);
+                    """;
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await AdaptColumnDimensionIfNeededAsync(dims, conn, tx, cancellationToken);
+
+            await tx.CommitAsync(cancellationToken);
+
+            _schemaInitialized = true;
         }
-
-        await AdaptColumnDimensionIfNeededAsync(dims, cancellationToken);
-
-        Volatile.Write(ref _schemaInitialized, 1);
+        finally
+        {
+            _schemaLock.Release();
+        }
     }
 
-    private async Task AdaptColumnDimensionIfNeededAsync(int requiredDimensions, CancellationToken ct)
+    private async Task EnsureTableExistsAsync(CancellationToken ct)
     {
-        await using var checkCmd = _dataSource.CreateCommand();
+        await using var cmd = _dataSource.CreateCommand();
+        cmd.CommandText = "SELECT to_regclass(@tableName) IS NOT NULL";
+        cmd.Parameters.AddWithValue("tableName", _tableName);
+        if ((bool)(await cmd.ExecuteScalarAsync(ct))!) return;
+
+        throw new InvalidOperationException(
+            $"PostgresOptions.SchemaManagement is None but the query cache table '{_tableName}' was not found. " +
+            $"Provision the schema manually (see the README 'Manual schema provisioning' section) or set " +
+            $"SchemaManagement = Auto to create it automatically.");
+    }
+
+    private async Task AdaptColumnDimensionIfNeededAsync(int requiredDimensions, NpgsqlConnection conn, NpgsqlTransaction tx, CancellationToken ct)
+    {
+        await using var checkCmd = conn.CreateCommand();
+        checkCmd.Transaction = tx;
         checkCmd.CommandText = """
             SELECT pa.atttypmod FROM pg_attribute pa
             WHERE pa.attrelid = to_regclass(@tableName)
@@ -197,7 +246,8 @@ public sealed class PostgresQueryCache : IQueryCache
         if (storedDimensions == requiredDimensions) return;
 
         // All cached entries are invalid after a dimension change — truncate and retype
-        await using var alterCmd = _dataSource.CreateCommand();
+        await using var alterCmd = conn.CreateCommand();
+        alterCmd.Transaction = tx;
         alterCmd.CommandText = $"""
             TRUNCATE TABLE {_tableName};
             ALTER TABLE {_tableName} ALTER COLUMN query_embedding TYPE vector({requiredDimensions});
@@ -207,4 +257,7 @@ public sealed class PostgresQueryCache : IQueryCache
 
     private static string FormatOrigin(Document.Origin o) =>
         $"{o.SourceId:N}|{o.DocumentType}|{o.DocumentId}";
+
+    /// <inheritdoc/>
+    public void Dispose() => _schemaLock.Dispose();
 }

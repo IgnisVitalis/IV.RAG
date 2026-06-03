@@ -200,66 +200,42 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             ValidateLanguage(_options.TextSearchLanguage);
             ValidateVectorIndexOptions();
 
-            var table = _options.TableName;
-            var modelsTable = $"{table}_models";
-            var dimensions = await ResolveDimensionsAsync(cancellationToken);
-            var language = _options.TextSearchLanguage;
-
-            // Phase 1: create tables and add missing columns
-            await using (var cmd = _dataSource.CreateCommand())
+            if (_options.SchemaManagement == SchemaManagementMode.None)
             {
-                cmd.CommandText = $"""
-                    CREATE TABLE IF NOT EXISTS {modelsTable} (
-                        id         SERIAL PRIMARY KEY,
-                        provider   TEXT NOT NULL,
-                        model_name TEXT NOT NULL,
-                        dimensions INT  NOT NULL,
-                        UNIQUE (provider, model_name, dimensions)
-                    );
-                    CREATE TABLE IF NOT EXISTS {table} (
-                        id            TEXT PRIMARY KEY,
-                        text          TEXT NOT NULL,
-                        embedding     vector({dimensions}) NOT NULL,
-                        metadata      JSONB,
-                        source_id     UUID NOT NULL,
-                        document_type TEXT NOT NULL,
-                        document_id   TEXT NOT NULL,
-                        chunk_index   INT,
-                        model_id      INT REFERENCES {modelsTable}(id),
-                        text_search   TSVECTOR GENERATED ALWAYS AS (to_tsvector('{language}'::regconfig, text)) STORED
-                    );
-                    ALTER TABLE {table} ADD COLUMN IF NOT EXISTS model_id INT REFERENCES {modelsTable}(id);
-                    CREATE INDEX IF NOT EXISTS {table}_origin_idx
-                        ON {table} (source_id, document_type, document_id);
-                    CREATE INDEX IF NOT EXISTS {table}_model_id_idx
-                        ON {table} (model_id);
-                    CREATE INDEX IF NOT EXISTS {table}_text_search_idx
-                        ON {table} USING GIN (text_search);
-                    """;
-                await cmd.ExecuteNonQueryAsync(cancellationToken);
+                await InitializeWithoutDdlAsync(cancellationToken);
+                return;
             }
 
-            // Phase 2: adapt vector column dimension if it changed
-            await AdaptColumnDimensionIfNeededAsync(dimensions, cancellationToken);
+            // All schema DDL runs in one transaction guarded by a PostgreSQL advisory lock, so
+            // concurrent application instances serialize their DDL (the lock auto-releases on
+            // commit). The model-mismatch exception is thrown only AFTER commit, so a dimension
+            // change persists for the migrator even when the mismatch aborts initialization.
+            EmbeddingModelMismatchException? mismatch;
+            await using (var conn = await _dataSource.OpenConnectionAsync(cancellationToken))
+            await using (var tx = await conn.BeginTransactionAsync(cancellationToken))
+            {
+                await AcquireSchemaLockAsync(conn, tx, cancellationToken);
 
-            // Phase 2b: create the ANN index on the embedding column. Runs after the column
-            // dimension is settled so a dimension change (which drops the index in Phase 2)
-            // recreates it at the correct size.
-            await EnsureVectorIndexAsync(dimensions, cancellationToken);
+                var dimensions = await ResolveDimensionsAsync(conn, tx, cancellationToken);
+                await CreateSchemaAsync(dimensions, conn, tx, cancellationToken);
+                await AdaptColumnDimensionIfNeededAsync(dimensions, conn, tx, cancellationToken);
+                await EnsureVectorIndexAsync(dimensions, conn, tx, cancellationToken);
+                _currentModelId = await UpsertModelAsync(dimensions, conn, tx, cancellationToken);
 
-            // Phase 3: upsert current model to get its id
-            _currentModelId = await UpsertModelAsync(dimensions, cancellationToken);
+                mismatch = await ReadMismatchAsync(conn, tx, cancellationToken);
+                if (mismatch is null)
+                    await TryTightenModelConstraintAsync(conn, tx, cancellationToken);
 
-            // Mark initialized here so _currentModelId is usable even when Phase 4 throws.
-            // Concurrent callers blocked on the semaphore will see _schemaInitialized = true
-            // and return early with a valid _currentModelId.
+                await tx.CommitAsync(cancellationToken);
+            }
+
+            // Mark initialized so _currentModelId is usable even when the mismatch throws.
+            // Concurrent callers blocked on the semaphore see _schemaInitialized = true and
+            // return early with a valid _currentModelId.
             _schemaInitialized = true;
 
-            // Phase 4: throw if any chunks were embedded with a different model
-            await ThrowIfMismatchAsync(cancellationToken);
-
-            // Phase 5: tighten model_id NOT NULL now that all rows are tracked
-            await TryTightenModelConstraintAsync(cancellationToken);
+            if (mismatch is not null)
+                throw mismatch;
         }
         finally
         {
@@ -267,9 +243,99 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
         }
     }
 
-    private async Task AdaptColumnDimensionIfNeededAsync(int requiredDimensions, CancellationToken ct)
+    // SchemaManagement.None: skip all structural DDL (the schema is provisioned externally), but
+    // still resolve the current model id and detect mismatches. No advisory lock is taken because
+    // nothing is mutated structurally.
+    private async Task InitializeWithoutDdlAsync(CancellationToken ct)
     {
-        await using var cmd = _dataSource.CreateCommand();
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        await EnsureRequiredTablesExistAsync(conn, ct);
+
+        var dimensions = await ResolveDimensionsAsync(conn, null, ct);
+        _currentModelId = await UpsertModelAsync(dimensions, conn, null, ct);
+        var mismatch = await ReadMismatchAsync(conn, null, ct);
+
+        _schemaInitialized = true;
+
+        if (mismatch is not null)
+            throw mismatch;
+    }
+
+    // Transaction-scoped advisory lock keyed on the table name. The key is hashed in SQL
+    // (hashtextextended) rather than via .NET string hashing, which is randomized per process.
+    private async Task AcquireSchemaLockAsync(NpgsqlConnection conn, NpgsqlTransaction tx, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0))";
+        cmd.Parameters.AddWithValue("key", $"iv.rag.schema:{_options.TableName}");
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task EnsureRequiredTablesExistAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT to_regclass(@chunks) IS NOT NULL, to_regclass(@models) IS NOT NULL";
+        cmd.Parameters.AddWithValue("chunks", _options.TableName);
+        cmd.Parameters.AddWithValue("models", $"{_options.TableName}_models");
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        await reader.ReadAsync(ct);
+        var chunksExist = reader.GetBoolean(0);
+        var modelsExist = reader.GetBoolean(1);
+        if (chunksExist && modelsExist) return;
+
+        var missing = !chunksExist ? _options.TableName : $"{_options.TableName}_models";
+        throw new InvalidOperationException(
+            $"PostgresOptions.SchemaManagement is None but the required table '{missing}' was not found. " +
+            $"Provision the schema manually (see the README 'Manual schema provisioning' section) or set " +
+            $"SchemaManagement = Auto to create it automatically.");
+    }
+
+    private async Task CreateSchemaAsync(int dimensions, NpgsqlConnection conn, NpgsqlTransaction tx, CancellationToken ct)
+    {
+        var table = _options.TableName;
+        var modelsTable = $"{table}_models";
+        var language = _options.TextSearchLanguage;
+
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"""
+            CREATE TABLE IF NOT EXISTS {modelsTable} (
+                id         SERIAL PRIMARY KEY,
+                provider   TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                dimensions INT  NOT NULL,
+                UNIQUE (provider, model_name, dimensions)
+            );
+            CREATE TABLE IF NOT EXISTS {table} (
+                id            TEXT PRIMARY KEY,
+                text          TEXT NOT NULL,
+                embedding     vector({dimensions}) NOT NULL,
+                metadata      JSONB,
+                source_id     UUID NOT NULL,
+                document_type TEXT NOT NULL,
+                document_id   TEXT NOT NULL,
+                chunk_index   INT,
+                model_id      INT REFERENCES {modelsTable}(id),
+                text_search   TSVECTOR GENERATED ALWAYS AS (to_tsvector('{language}'::regconfig, text)) STORED
+            );
+            ALTER TABLE {table} ADD COLUMN IF NOT EXISTS model_id INT REFERENCES {modelsTable}(id);
+            CREATE INDEX IF NOT EXISTS {table}_origin_idx
+                ON {table} (source_id, document_type, document_id);
+            CREATE INDEX IF NOT EXISTS {table}_model_id_idx
+                ON {table} (model_id);
+            CREATE INDEX IF NOT EXISTS {table}_text_search_idx
+                ON {table} USING GIN (text_search);
+            """;
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task AdaptColumnDimensionIfNeededAsync(int requiredDimensions, NpgsqlConnection conn, NpgsqlTransaction tx, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         // to_regclass returns NULL instead of throwing when the table does not exist yet
         cmd.CommandText = """
             SELECT pa.atttypmod
@@ -291,7 +357,8 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
         // Text is preserved; IEmbeddingMigrator.MigrateAsync() re-embeds everything.
         // The vector index is dropped first because it depends on the column type;
         // EnsureVectorIndexAsync recreates it at the new dimension.
-        await using var alterCmd = _dataSource.CreateCommand();
+        await using var alterCmd = conn.CreateCommand();
+        alterCmd.Transaction = tx;
         alterCmd.CommandText = $"""
             DROP INDEX IF EXISTS {_options.TableName}_embedding_idx;
             ALTER TABLE {_options.TableName} ALTER COLUMN embedding DROP NOT NULL;
@@ -304,7 +371,7 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             _options.TableName, storedDimensions, requiredDimensions);
     }
 
-    private async Task EnsureVectorIndexAsync(int dimensions, CancellationToken ct)
+    private async Task EnsureVectorIndexAsync(int dimensions, NpgsqlConnection conn, NpgsqlTransaction tx, CancellationToken ct)
     {
         if (_options.VectorIndex == VectorIndexType.None) return;
 
@@ -332,15 +399,17 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             _ => throw new InvalidOperationException($"Unsupported vector index type '{_options.VectorIndex}'.")
         };
 
-        await using var cmd = _dataSource.CreateCommand();
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {indexName} ON {_options.TableName} {indexClause}";
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task<int> UpsertModelAsync(int dimensions, CancellationToken ct)
+    private async Task<int> UpsertModelAsync(int dimensions, NpgsqlConnection conn, NpgsqlTransaction? tx, CancellationToken ct)
     {
         var model = _embedder.ModelInfo;
-        await using var cmd = _dataSource.CreateCommand();
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         cmd.CommandText = $"""
             INSERT INTO {_options.TableName}_models (provider, model_name, dimensions)
             VALUES (@provider, @modelName, @dimensions)
@@ -361,13 +430,14 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
         return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
-    private async Task<int> ResolveDimensionsAsync(CancellationToken ct)
+    private async Task<int> ResolveDimensionsAsync(NpgsqlConnection conn, NpgsqlTransaction? tx, CancellationToken ct)
     {
         var dims = _embedder.ModelInfo.Dimensions;
         if (dims > 0) return dims;
 
         // EmbeddingDimensions not configured and no embed call made yet — read from existing column
-        await using var cmd = _dataSource.CreateCommand();
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         cmd.CommandText = """
             SELECT pa.atttypmod FROM pg_attribute pa
             WHERE pa.attrelid = to_regclass(@tableName)
@@ -385,9 +455,13 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             $"EmbedAsync call completes before the first store operation.");
     }
 
-    private async Task ThrowIfMismatchAsync(CancellationToken ct)
+    // Reads whether any chunk is embedded with a different model (or has no vector yet) and returns
+    // the exception to throw, or null when everything matches. Does not throw, so the caller can
+    // commit the schema transaction before surfacing the mismatch.
+    private async Task<EmbeddingModelMismatchException?> ReadMismatchAsync(NpgsqlConnection conn, NpgsqlTransaction? tx, CancellationToken ct)
     {
-        await using var cmd = _dataSource.CreateCommand();
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
         cmd.CommandText = $"""
             SELECT m.provider, m.model_name, m.dimensions
             FROM {_options.TableName} c
@@ -398,7 +472,7 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
         cmd.Parameters.AddWithValue("currentModelId", NpgsqlDbType.Integer, _currentModelId);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct)) return;
+        if (!await reader.ReadAsync(ct)) return null;
 
         EmbedderInfo? storedModel = reader.IsDBNull(0)
             ? null
@@ -408,13 +482,14 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             "Embedding model mismatch on table '{Table}': stored={Stored}, current={Current}. " +
             "Run IEmbeddingMigrator.MigrateAsync() to re-embed outdated chunks.",
             _options.TableName, storedModel?.ToString() ?? "unknown", _embedder.ModelInfo);
-        throw new EmbeddingModelMismatchException(storedModel, _embedder.ModelInfo, _options.TableName);
+        return new EmbeddingModelMismatchException(storedModel, _embedder.ModelInfo, _options.TableName);
     }
 
-    private async Task TryTightenModelConstraintAsync(CancellationToken ct)
+    private async Task TryTightenModelConstraintAsync(NpgsqlConnection conn, NpgsqlTransaction tx, CancellationToken ct)
     {
         // Check whether model_id is already NOT NULL — skip the ALTER if so.
-        await using var checkCmd = _dataSource.CreateCommand();
+        await using var checkCmd = conn.CreateCommand();
+        checkCmd.Transaction = tx;
         checkCmd.CommandText = """
             SELECT pa.attnotnull
             FROM pg_attribute pa
@@ -427,7 +502,8 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
         var result = await checkCmd.ExecuteScalarAsync(ct);
         if (result is true) return;
 
-        await using var alterCmd = _dataSource.CreateCommand();
+        await using var alterCmd = conn.CreateCommand();
+        alterCmd.Transaction = tx;
         alterCmd.CommandText = $"ALTER TABLE {_options.TableName} ALTER COLUMN model_id SET NOT NULL";
         await alterCmd.ExecuteNonQueryAsync(ct);
         _logger?.LogInformation(

@@ -10,21 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 1 — Production-readiness blockers
 
-- [ ] **Cross-process coordination for schema DDL**
-  `EnsureSchemaAsync` is guarded only by a process-local `SemaphoreSlim`
-  (`PostgresVectorStore.cs:191`). The destructive paths — `ALTER COLUMN ... TYPE
-  vector(n) USING NULL` (`PostgresVectorStore.cs:283`) and the query-cache `TRUNCATE` + `ALTER`
-  (`PostgresQueryCache.cs:200`) — can interleave destructively when multiple app instances
-  start against the same database.
-  - Wrap the schema-mutation section in a PostgreSQL transaction-scoped advisory lock
-    (`pg_advisory_xact_lock(<stable key derived from table name>)`) so only one instance
-    performs DDL at a time.
-  - Add `PostgresOptions.SchemaManagement { Auto | None }` (default `Auto`). When `None`,
-    skip all runtime DDL — for deployments using explicit migrations and least-privilege
-    runtime accounts. Document the SQL needed to provision the schema manually.
-  - Apply the same advisory-lock pattern to `PostgresQueryCache.EnsureSchemaAsync`, and give
-    it the same `SemaphoreSlim` in-process guard the vector store has (see M2 below).
-
 - [ ] **Eliminate double embedding on cache miss**
   `CachedRetrievalPipeline` embeds the query to probe the cache (`CachedRetrievalPipeline.cs:38`),
   then on a miss the inner `PostgresRetriever` embeds the same query again
@@ -167,12 +152,6 @@ correctness/security primitives, not just features, and pair naturally with Tier
   `RagPipeline.AnswerAsync` (`RagPipeline.cs:41`) duplicates `AnswerPipeline.AnswerAsync`
   (`AnswerPipeline.cs:24`). Have `RagPipeline` compose an `AnswerPipeline` (or a shared helper)
   instead of reimplementing the retrieve→generate logic.
-
-- [ ] **Lock query-cache schema init (consistency with vector store)**
-  `PostgresQueryCache.EnsureSchemaAsync` uses only a `Volatile` int flag
-  (`PostgresQueryCache.cs:149`), so concurrent first calls can both run the `TRUNCATE`/`ALTER`
-  adaptation. Add a `SemaphoreSlim(1,1)` guard mirroring `PostgresVectorStore` (and the
-  advisory lock from the Tier 1 DDL task).
 
 - [ ] **In-memory cache LRU eviction**
   `InMemoryQueryCache` evicts FIFO via `_entries.RemoveAt(0)` (`InMemoryQueryCache.cs:70`),
