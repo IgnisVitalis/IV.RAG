@@ -1,5 +1,6 @@
 using FluentAssertions;
 using IV.RAG.IntegrationTests.Fixtures;
+using IV.RAG.IntegrationTests.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace IV.RAG.IntegrationTests;
@@ -27,10 +28,10 @@ public sealed class PostgresQueryCacheTests : IClassFixture<PostgresContainerFix
 
     private PostgresQueryCache CreateCache(string tableName, float threshold = 0.95f, TimeSpan? ttl = null) =>
         new(_fixture.DataSource,
+            new FakeEmbedder(_ => VecA, dimensions: 3),
             Options.Create(new PostgresOptions
             {
                 ConnectionString = _fixture.ConnectionString,
-                VectorDimension = 3,
                 QueryCacheTableName = tableName
             }),
             Options.Create(new QueryCacheOptions

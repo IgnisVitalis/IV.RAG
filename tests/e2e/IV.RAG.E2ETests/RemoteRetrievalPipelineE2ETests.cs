@@ -34,8 +34,7 @@ public sealed class RemoteRetrievalPipelineE2ETests : IClassFixture<PostgresCont
         var postgresOptions = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = VectorDimension
+            TableName = tableName
         });
         var httpFactory = new SingletonHttpClientFactory(OllamaEndpoint);
         var ollamaOptions = Options.Create(new OllamaOptions
@@ -46,7 +45,7 @@ public sealed class RemoteRetrievalPipelineE2ETests : IClassFixture<PostgresCont
         var embedder = new OllamaEmbedder(httpFactory, ollamaOptions);
         var chunker = new PlainTextChunkerBridge(
             new FixedSizeChunker(Options.Create(new FixedSizeChunkerOptions { ChunkSize = 512 })));
-        var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
+        var vectorStore = new PostgresVectorStore(_fixture.DataSource, embedder, postgresOptions);
         var retriever = new PostgresRetriever(_fixture.DataSource, embedder, postgresOptions);
         var pipeline = new RetrievalPipeline(
             chunker, embedder, vectorStore, retriever,

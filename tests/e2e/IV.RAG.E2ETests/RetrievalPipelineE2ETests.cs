@@ -30,8 +30,7 @@ public sealed class RetrievalPipelineE2ETests : IClassFixture<PostgresContainerF
         var postgresOptions = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = VectorDimension
+            TableName = tableName
         });
         var httpFactory = new SingletonHttpClientFactory(OllamaEndpoint);
         var ollamaOptions = Options.Create(new OllamaOptions
@@ -42,7 +41,7 @@ public sealed class RetrievalPipelineE2ETests : IClassFixture<PostgresContainerF
         var embedder = new OllamaEmbedder(httpFactory, ollamaOptions);
         var chunker = new PlainTextChunkerBridge(
             new FixedSizeChunker(Options.Create(new FixedSizeChunkerOptions { ChunkSize = 512 })));
-        var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
+        var vectorStore = new PostgresVectorStore(_fixture.DataSource, embedder, postgresOptions);
         var retriever = new PostgresRetriever(_fixture.DataSource, embedder, postgresOptions);
         return new RetrievalPipeline(
             chunker, embedder, vectorStore, retriever,
@@ -126,7 +125,6 @@ public sealed class RetrievalPipelineE2ETests : IClassFixture<PostgresContainerF
             {
                 o.ConnectionString = _fixture.ConnectionString;
                 o.TableName = tableName;
-                o.VectorDimension = VectorDimension;
             });
 
         await using var provider = services.BuildServiceProvider();

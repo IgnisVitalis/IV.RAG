@@ -39,10 +39,9 @@ public sealed class HybridRetrievalPipelineIntegrationTests : IClassFixture<Post
         var options = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = 3
+            TableName = tableName
         });
-        var store = new PostgresVectorStore(_fixture.DataSource, options);
+        var store = new PostgresVectorStore(_fixture.DataSource, embedder, options);
         var vectorRetriever = new PostgresRetriever(_fixture.DataSource, embedder, options);
         var lexicalRetriever = new PostgresLexicalRetriever(_fixture.DataSource, options);
         var pipeline = new HybridRetrievalPipeline(vectorRetriever, lexicalRetriever,

@@ -28,16 +28,16 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
         Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = 3
+            TableName = tableName
         });
 
     private PostgresRetriever CreateRetriever(string tableName, float[] queryVector) =>
-        new(_fixture.DataSource, new FakeEmbedder(_ => queryVector), TableOptions(tableName));
+        new(_fixture.DataSource, new FakeEmbedder(_ => queryVector, dimensions: 3), TableOptions(tableName));
 
     private async Task SeedAsync(string tableName)
     {
-        var store = new PostgresVectorStore(_fixture.DataSource, TableOptions(tableName));
+        var embedder = new FakeEmbedder(_ => VectorCats, dimensions: 3);
+        var store = new PostgresVectorStore(_fixture.DataSource, embedder, TableOptions(tableName));
         await store.SetAsync(TestOrigin,
         [
             new Chunk { Id = "cats", Text = "cats are animals", Embedding = VectorCats, Origin = TestOrigin },
@@ -119,7 +119,7 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     public async Task RetrieveAsync_EmptyStore_ReturnsEmpty()
     {
         var table = PostgresContainerFixture.NewTable();
-        var store = new PostgresVectorStore(_fixture.DataSource, TableOptions(table));
+        var store = new PostgresVectorStore(_fixture.DataSource, new FakeEmbedder(_ => VectorCats, 3), TableOptions(table));
         await store.SetAsync(TestOrigin, []); // trigger schema creation
         var retriever = CreateRetriever(table, VectorCats);
 
@@ -135,7 +135,7 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
 
     private async Task<PostgresRetriever> SeedWithMetadataAsync(string tableName)
     {
-        await new PostgresVectorStore(_fixture.DataSource, TableOptions(tableName)).SetAsync(TestOrigin,
+        await new PostgresVectorStore(_fixture.DataSource, new FakeEmbedder(_ => VectorCats, 3), TableOptions(tableName)).SetAsync(TestOrigin,
         [
             new Chunk
             {

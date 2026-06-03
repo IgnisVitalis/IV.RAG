@@ -10,13 +10,6 @@ public sealed class PostgresOptions
     public string TableName { get; set; } = "chunks";
 
     /// <summary>
-    /// Dimensionality of the embedding vectors.
-    /// Must match the model used by <see cref="IEmbedder"/>.
-    /// Defaults to 768 (<c>nomic-embed-text</c>).
-    /// </summary>
-    public int VectorDimension { get; set; } = 768;
-
-    /// <summary>
     /// PostgreSQL text search configuration used for full-text indexing and lexical retrieval.
     /// Must be a valid PostgreSQL text search configuration name (e.g., <c>"english"</c>,
     /// <c>"french"</c>, <c>"german"</c>). Use <c>"simple"</c> for language-agnostic matching

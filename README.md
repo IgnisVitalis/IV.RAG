@@ -9,10 +9,10 @@ A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pi
 | Package | Description |
 |---|---|
 | `IV.RAG.Abstractions` | Core interfaces and models. No dependencies. Domain projects depend only on this. |
-| `IV.RAG.Core` | Pipeline orchestrators (`RagPipeline`, `RetrievalPipeline`, `AnswerPipeline`, `HybridRetrievalPipeline`, `CachedRetrievalPipeline`). Depends only on Abstractions. |
+| `IV.RAG.Core` | Pipeline orchestrators (`RagPipeline`, `RetrievalPipeline`, `AnswerPipeline`, `HybridRetrievalPipeline`, `CachedRetrievalPipeline`). Embedding migration (`EmbeddingMigrator`). Depends only on Abstractions. |
 | `IV.RAG.Ingestion` | Document types and chunkers (`PlainTextDocument`, `FixedSizeChunker`, `SentenceChunker`). |
 | `IV.RAG.Ollama` | `IEmbedder` and `IGenerator` backed by Ollama (`/api/embed`, `/api/chat`). |
-| `IV.RAG.Postgres` | `IVectorStore`, `IRetriever`, and `ILexicalRetriever` backed by PostgreSQL + pgvector + full-text search. |
+| `IV.RAG.Postgres` | `IVectorStore`, `IRetriever`, and `ILexicalRetriever` backed by PostgreSQL + pgvector + full-text search. Model-versioned vector storage and semantic query cache. |
 | `IV.RAG.Remote.Http` | `IRetrievalPipeline` proxy — forwards queries to a remote retrieval server over HTTP. |
 
 ## Deployment topologies
@@ -24,7 +24,12 @@ Everything runs in one process: ingestion, retrieval, and generation.
 ```csharp
 services.AddRagToolkit()
     .AddSentenceChunker(o => o.MaxChunkSize = 512)
-    .AddOllamaEmbedder(o => o.EmbeddingModel = "nomic-embed-text")
+    .AddOllamaEmbedder(o =>
+    {
+        o.EmbeddingModel = "nomic-embed-text";
+        // EmbeddingDimensions defaults to 0 — auto-detected from the first embed response.
+        // Set explicitly only when a store operation must run before the first embed call.
+    })
     .AddOllamaGenerator(o =>
     {
         o.GenerationModel = "llama3.2";
@@ -33,8 +38,8 @@ services.AddRagToolkit()
     .AddPostgresVectorStore(o =>
     {
         o.ConnectionString = "Host=localhost;Database=rag;Username=postgres;Password=postgres";
-        o.VectorDimension = 768;
-    });
+    })
+    .AddEmbeddingMigrator(); // optional — register to handle model changes at startup
 ```
 
 ### Hybrid search (vector + lexical)
@@ -46,11 +51,7 @@ services.AddRagToolkit()
     .AddSentenceChunker()
     .AddOllamaEmbedder(o => o.EmbeddingModel = "nomic-embed-text")
     .AddOllamaGenerator(o => o.GenerationModel = "llama3.2")
-    .AddPostgresVectorStore(o =>
-    {
-        o.ConnectionString = "...";
-        o.VectorDimension = 768;
-    })
+    .AddPostgresVectorStore(o => o.ConnectionString = "...")
     .AddPostgresLexicalRetriever()        // adds ILexicalRetriever (tsvector/tsquery)
     .AddHybridRetrievalPipeline(o =>      // replaces IRetrievalPipeline with hybrid
     {
@@ -83,7 +84,7 @@ services.AddRagToolkit()
     .AddSentenceChunker()
     .AddOllamaEmbedder(o => o.EmbeddingModel = "nomic-embed-text")
     .AddOllamaGenerator(o => o.GenerationModel = "llama3.2")
-    .AddPostgresVectorStore(o => { o.ConnectionString = "..."; o.VectorDimension = 768; })
+    .AddPostgresVectorStore(o => o.ConnectionString = "...")
     .AddInMemoryQueryCache(o =>
     {
         o.SimilarityThreshold = 0.95f; // minimum cosine similarity for a cache hit
@@ -102,6 +103,8 @@ Use `AddPostgresQueryCache()` instead of `AddInMemoryQueryCache()` to store the 
 
 **Cache invalidation:** when a document is re-ingested, all cache entries that previously returned chunks from that document are removed automatically. New documents do not trigger invalidation (no existing entry references them); TTL handles those entries naturally.
 
+**Model changes:** the query cache stores which embedding model produced each cached query vector. When the embedder changes, entries from the old model are removed automatically on the next write — the cache self-cleans without manual intervention.
+
 **Empty results are not cached** — a query that finds nothing is always forwarded to the inner pipeline, so results appear as soon as matching documents are ingested.
 
 ### Server — retrieval only
@@ -111,8 +114,8 @@ Exposes a retrieval endpoint; does not generate answers.
 ```csharp
 services.AddRetrievalPipeline()
     .AddSentenceChunker()
-    .AddOllamaEmbedder()
-    .AddPostgresVectorStore(o => { ... });
+    .AddOllamaEmbedder(o => o.EmbeddingModel = "nomic-embed-text")
+    .AddPostgresVectorStore(o => { o.ConnectionString = "..."; });
 
 // inject IIngestionPipeline for your ingest endpoint
 // inject IRetrievalPipeline for your query endpoint
@@ -130,6 +133,59 @@ services.AddAnswerPipeline()
 // inject IAnswerPipeline
 var answer = await answerPipeline.AnswerAsync("What is RAG?");
 ```
+
+## Embedding model versioning
+
+Every chunk stored in the vector table carries a reference to the embedding model that produced its vector. The model identity — provider, name, and dimensions — is tracked in a `{tableName}_models` companion table.
+
+### Automatic mismatch detection
+
+If you switch to a different embedder model, `PostgresVectorStore` detects the mismatch on first use and throws:
+
+```
+EmbeddingModelMismatchException: Vector table 'chunks' contains chunks embedded with
+ollama/nomic-embed-text (768d), but the current embedder is ollama/mxbai-embed-large (1024d).
+Call IEmbeddingMigrator.MigrateAsync() to re-embed all outdated chunks.
+```
+
+If the new model has **different dimensions**, the `embedding` column is automatically altered to the new vector size (existing vectors are cleared) before the exception is thrown. The text of each chunk is preserved — only the vectors are wiped.
+
+### Migrating
+
+Register `IEmbeddingMigrator` and check at startup:
+
+```csharp
+services.AddRagToolkit()
+    .AddOllamaEmbedder(o => o.EmbeddingModel = "mxbai-embed-large")
+    // EmbeddingDimensions auto-detected on first embed — no manual config needed
+    ...
+    .AddPostgresVectorStore(o => o.ConnectionString = "...")
+    .AddEmbeddingMigrator();
+```
+
+```csharp
+// Hosted service or startup code:
+if (await migrator.IsNeededAsync(cancellationToken))
+{
+    logger.LogInformation("Embedding model changed — starting migration...");
+
+    await migrator.MigrateAsync(
+        progress: new Progress<EmbeddingMigrationProgress>(p =>
+            logger.LogInformation(
+                "[{Processed}/{Total}] re-embedded chunk from {Origin}",
+                p.Processed, p.Total, p.CurrentOrigin)),
+        maxConcurrency: 4,        // concurrent embed calls per batch (default 4)
+        cancellationToken: ct);
+
+    logger.LogInformation("Migration complete.");
+}
+```
+
+Migration re-embeds all outdated chunks **in-place** — no data loss, no re-fetching source documents. The text stored alongside each vector is used directly. Up to `maxConcurrency` embed calls run concurrently per batch.
+
+`IsNeededAsync()` returns `false` when the store is empty or all chunks already match the current model — safe to call on every startup with no cost when nothing has changed.
+
+After a complete migration the next clean startup tightens the `model_id NOT NULL` constraint automatically.
 
 ## Quick start
 
@@ -253,7 +309,7 @@ The dispatcher routes each document to its registered chunker automatically. If 
 ### Pipeline flow
 
 ```
-Ingest:  Document → IChunker<T> → IEmbedder → IVectorStore → [IQueryCache.Invalidate]
+Ingest:  Document → IChunker<T> → IEmbedder → IVectorStore (stores vector + model ref) → [IQueryCache.Invalidate]
 
 Query (vector only):
          string → IEmbedder → [IQueryCache.Get] → hit: cached results
@@ -272,13 +328,14 @@ Answer:  string → QueryAsync → IGenerator → string
 | Interface | Provided by | Purpose |
 |---|---|---|
 | `IChunker<TDoc>` | `IV.RAG.Ingestion` or custom | Split documents into chunks |
-| `IEmbedder` | `IV.RAG.Ollama` or custom | Generate vector embeddings |
+| `IEmbedder` | `IV.RAG.Ollama` or custom | Generate vector embeddings. Exposes `EmbedderInfo ModelInfo` (provider, model name, dimensions) used for version tracking. |
 | `IGenerator` | `IV.RAG.Ollama` or custom | Generate answers from retrieved chunks |
-| `IVectorStore` | `IV.RAG.Postgres` or custom | Persist and manage chunks |
+| `IVectorStore` | `IV.RAG.Postgres` or custom | Persist and manage chunks with model tracking |
 | `IRetriever` | `IV.RAG.Postgres` or custom | Vector similarity search |
 | `ILexicalRetriever` | `IV.RAG.Postgres` or custom | Keyword/BM25 search |
 | `IReranker` | custom | Cross-encoder reranking after fusion |
 | `IQueryCache` | `IV.RAG.Core` (in-memory), `IV.RAG.Postgres` | Semantic query result cache |
+| `IEmbeddingMigrator` | `IV.RAG.Core` | Re-embed outdated chunks after a model change |
 
 Each interface lives in `IV.RAG.Abstractions`. Swap any implementation in one DI registration — no other code changes required.
 
@@ -327,10 +384,10 @@ The pipeline automatically enriches each chunk before storage:
 ```
 src/
   IV.RAG.Abstractions/     ← interfaces + models
-  IV.RAG.Core/             ← pipeline orchestrators (incl. HybridRetrievalPipeline)
+  IV.RAG.Core/             ← pipeline orchestrators (incl. HybridRetrievalPipeline, EmbeddingMigrator)
   IV.RAG.Ingestion/        ← chunkers + document types
   IV.RAG.Ollama/           ← embedder + generator
-  IV.RAG.Postgres/         ← vector store + vector retriever + lexical retriever
+  IV.RAG.Postgres/         ← vector store + vector retriever + lexical retriever + query cache
   IV.RAG.Remote.Http/      ← remote retrieval proxy
 tests/
   unit/                    ← no infrastructure required

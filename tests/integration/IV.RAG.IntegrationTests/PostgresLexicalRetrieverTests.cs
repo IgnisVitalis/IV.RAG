@@ -1,5 +1,6 @@
 using FluentAssertions;
 using IV.RAG.IntegrationTests.Fixtures;
+using IV.RAG.IntegrationTests.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace IV.RAG.IntegrationTests;
@@ -26,10 +27,10 @@ public sealed class PostgresLexicalRetrieverTests : IClassFixture<PostgresContai
         var options = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = 3
+            TableName = tableName
         });
-        return (new PostgresVectorStore(_fixture.DataSource, options),
+        var embedder = new FakeEmbedder(_ => AnyVector, dimensions: 3);
+        return (new PostgresVectorStore(_fixture.DataSource, embedder, options),
                 new PostgresLexicalRetriever(_fixture.DataSource, options));
     }
 

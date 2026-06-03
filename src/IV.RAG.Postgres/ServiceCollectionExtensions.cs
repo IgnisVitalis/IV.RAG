@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Pgvector;
@@ -32,7 +33,11 @@ public static class ServiceCollectionExtensions
             return dataSourceBuilder.Build();
         });
 
-        builder.Services.AddSingleton<IVectorStore, PostgresVectorStore>();
+        builder.Services.AddSingleton<IVectorStore>(sp => new PostgresVectorStore(
+            sp.GetRequiredService<NpgsqlDataSource>(),
+            sp.GetRequiredService<IEmbedder>(),
+            sp.GetRequiredService<IOptions<PostgresOptions>>(),
+            sp.GetService<ILogger<PostgresVectorStore>>()));
         builder.Services.AddSingleton<IRetriever, PostgresRetriever>();
         return builder;
     }
@@ -65,7 +70,11 @@ public static class ServiceCollectionExtensions
     {
         if (configure is not null)
             builder.Services.Configure<QueryCacheOptions>(configure);
-        builder.Services.AddSingleton<IQueryCache, PostgresQueryCache>();
+        builder.Services.AddSingleton<IQueryCache>(sp => new PostgresQueryCache(
+            sp.GetRequiredService<NpgsqlDataSource>(),
+            sp.GetRequiredService<IEmbedder>(),
+            sp.GetRequiredService<IOptions<PostgresOptions>>(),
+            sp.GetRequiredService<IOptions<QueryCacheOptions>>()));
         return builder;
     }
 }

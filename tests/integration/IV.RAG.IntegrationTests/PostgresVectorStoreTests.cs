@@ -21,11 +21,11 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
         var options = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = 3
+            TableName = tableName
         });
-        return (new PostgresVectorStore(_fixture.DataSource, options),
-                new PostgresRetriever(_fixture.DataSource, new FakeEmbedder(_ => Embedding), options));
+        var embedder = new FakeEmbedder(_ => Embedding, dimensions: 3);
+        return (new PostgresVectorStore(_fixture.DataSource, embedder, options),
+                new PostgresRetriever(_fixture.DataSource, embedder, options));
     }
 
     [Fact]

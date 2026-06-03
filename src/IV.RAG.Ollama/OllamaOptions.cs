@@ -13,6 +13,14 @@ public sealed class OllamaOptions
     public string GenerationModel { get; set; } = "llama3.2";
 
     /// <summary>
+    /// Dimensionality of the vectors produced by <see cref="EmbeddingModel"/>.
+    /// Leave at <c>0</c> (the default) to detect the dimension automatically from the first
+    /// embed response. Set explicitly only when a store operation (e.g. migration check) must
+    /// run before any embed call has been made, or to pin a specific truncated dimension.
+    /// </summary>
+    public int EmbeddingDimensions { get; set; } = 0;
+
+    /// <summary>
     /// System prompt sent to the model before the user message.
     /// Controls the model's role and answer constraints.
     /// </summary>

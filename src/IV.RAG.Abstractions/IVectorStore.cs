@@ -18,4 +18,23 @@ public interface IVectorStore
 
     /// <summary>Removes all chunks belonging to the document identified by <paramref name="origin"/>.</summary>
     Task DeleteByDocumentAsync(Document.Origin origin, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the number of chunks whose stored embedding model differs from the store's
+    /// current model, or whose embedding is <c>null</c>.
+    /// </summary>
+    Task<int> CountOutdatedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streams all chunks whose stored embedding model differs from the store's current model,
+    /// or whose embedding is <c>null</c> (e.g. after a vector column dimension change).
+    /// These chunks must be re-embedded before they can serve accurate retrieval results.
+    /// </summary>
+    IAsyncEnumerable<Chunk> GetOutdatedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replaces the embedding of the chunk identified by <paramref name="id"/> with the new
+    /// embedding produced by the store's current model.
+    /// </summary>
+    Task UpdateEmbeddingAsync(string id, float[] embedding, CancellationToken cancellationToken = default);
 }

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-03
+
+### Added
+
+- **Embedding model versioning** — `IEmbedder` now exposes `EmbedderInfo ModelInfo { get; }` with `Provider`, `ModelName`, and `Dimensions`. `OllamaEmbedder` populates it from `OllamaOptions.EmbeddingDimensions` (default 768).
+- `EmbeddingModelMismatchException` (`Abstractions`) — thrown on first use when the vector table's stored model differs from the current embedder. Carries `StoredModel`, `CurrentModel`, and `TableName`.
+- `IEmbeddingMigrator` (`Abstractions`) — `IsNeededAsync()` and `MigrateAsync(progress, maxConcurrency, ct)`. `EmbeddingMigrator` (`Core`) implements it: counts outdated chunks first, then streams and processes them in concurrent batches of `maxConcurrency` (default 4). Reports `EmbeddingMigrationProgress(Total, Processed, CurrentOrigin)` per chunk.
+- `AddEmbeddingMigrator()` (`Core`) — registers `EmbeddingMigrator` as `IEmbeddingMigrator`. Requires `IVectorStore` and `IEmbedder` to be registered.
+- `IVectorStore.CountOutdatedAsync()` — returns the count of chunks needing re-embedding without loading their text.
+- `IVectorStore.GetOutdatedAsync()` — streams outdated chunks as `IAsyncEnumerable<Chunk>` for memory-efficient migration of large stores.
+- `IVectorStore.UpdateEmbeddingAsync(id, embedding, ct)` — updates a single chunk's vector and model tracking in place.
+- `{tableName}_models` table — companion table tracking every `(provider, model_name, dimensions)` tuple seen. Each chunk row carries a `model_id` FK to this table; a partial index on `model_id` accelerates mismatch queries.
+- `PostgresQueryCache` now tracks `embedder_provider`, `embedder_model`, `embedder_dimensions` per cache row. Reads filter by current model; writes purge entries from other models. Dimension changes truncate the cache and retype the column automatically.
+
+### Changed
+
+- **Breaking:** `PostgresOptions.VectorDimension` removed. Dimensions now come from `IEmbedder.ModelInfo.Dimensions`. Set `OllamaOptions.EmbeddingDimensions` to match your model (default 768).
+- **Breaking:** `PostgresVectorStore` constructor gains a required `IEmbedder` parameter. `PostgresQueryCache` constructor gains a required `IEmbedder` parameter.
+- **Breaking:** `IVectorStore.GetOutdatedAsync` return type changed from `Task<IReadOnlyList<Chunk>>` to `IAsyncEnumerable<Chunk>`. Callers must switch to `await foreach`.
+- `PostgresVectorStore` implements `IDisposable` (disposes the internal `SemaphoreSlim`).
+- `PostgresVectorStore.EnsureSchemaAsync` is now concurrency-safe: a `SemaphoreSlim(1,1)` guard replaces the previous `Interlocked.Exchange` pattern, ensuring `_currentModelId` is always valid before concurrent callers proceed.
+- When an embedding dimension change is detected, the `embedding` column is silently altered to the new type (existing vectors set to `NULL`). A subsequent `IEmbeddingMigrator.MigrateAsync()` re-embeds all affected chunks.
+- After a successful migration, `PostgresVectorStore` tightens the `model_id NOT NULL` constraint on the next startup.
+- `EmbedderInfo.ToString()` returns `"provider/model (Nd)"` — used in log messages and exception text.
+- `PostgresVectorStore` and `EmbeddingMigrator` accept an optional `ILogger<T>` and emit structured log events for dimension changes, mismatch detection, migration start/end, and constraint tightening.
+
 ## [0.8.0] - 2026-06-03
 
 ### Added

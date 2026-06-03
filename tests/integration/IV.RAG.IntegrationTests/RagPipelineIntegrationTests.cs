@@ -29,13 +29,12 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
         var postgresOptions = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = 3
+            TableName = tableName
         });
         var chunkerOptions = Options.Create(new FixedSizeChunkerOptions { ChunkSize = 512 });
 
         var chunker = new PlainTextChunkerBridge(new FixedSizeChunker(chunkerOptions));
-        var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
+        var vectorStore = new PostgresVectorStore(_fixture.DataSource, embedder, postgresOptions);
         var retriever = new PostgresRetriever(_fixture.DataSource, embedder, postgresOptions);
 
         var retrieval = new RetrievalPipeline(chunker, embedder, vectorStore, retriever, NullLogger<RetrievalPipeline>.Instance);
@@ -130,8 +129,7 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
         var postgresOptions = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = 3
+            TableName = tableName
         });
 
         var services = new ServiceCollection();
@@ -139,7 +137,7 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
         services.AddSingleton<ILogger<RagPipeline>>(NullLogger<RagPipeline>.Instance);
         services.AddSingleton(embedder);
         services.AddSingleton<IGenerator>(new NullGenerator());
-        services.AddSingleton<IVectorStore>(_ => new PostgresVectorStore(_fixture.DataSource, postgresOptions));
+        services.AddSingleton<IVectorStore>(sp => new PostgresVectorStore(_fixture.DataSource, sp.GetRequiredService<IEmbedder>(), postgresOptions));
         services.AddSingleton<IRetriever>(sp => new PostgresRetriever(_fixture.DataSource, sp.GetRequiredService<IEmbedder>(), postgresOptions));
         services.AddRagToolkit().AddPlainTextChunker();
         return services.BuildServiceProvider().GetRequiredService<IRagPipeline>();

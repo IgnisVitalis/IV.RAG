@@ -38,8 +38,7 @@ public sealed class HybridAnswerPipelineE2ETests : IClassFixture<PostgresContain
         var postgresOptions = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = VectorDimension
+            TableName = tableName
         });
         var httpFactory = new SingletonHttpClientFactory(OllamaEndpoint);
         var ollamaOptions = Options.Create(new OllamaOptions
@@ -53,7 +52,7 @@ public sealed class HybridAnswerPipelineE2ETests : IClassFixture<PostgresContain
         var generator = new OllamaGenerator(httpFactory, ollamaOptions);
         var chunker = new PlainTextChunkerBridge(
             new FixedSizeChunker(Options.Create(new FixedSizeChunkerOptions { ChunkSize = 512 })));
-        var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
+        var vectorStore = new PostgresVectorStore(_fixture.DataSource, embedder, postgresOptions);
         var vectorRetriever = new PostgresRetriever(_fixture.DataSource, embedder, postgresOptions);
         var lexicalRetriever = new PostgresLexicalRetriever(_fixture.DataSource, postgresOptions);
 
@@ -144,7 +143,6 @@ public sealed class HybridAnswerPipelineE2ETests : IClassFixture<PostgresContain
             {
                 o.ConnectionString = _fixture.ConnectionString;
                 o.TableName = tableName;
-                o.VectorDimension = VectorDimension;
             })
             .AddPostgresLexicalRetriever()
             .AddHybridRetrievalPipeline();

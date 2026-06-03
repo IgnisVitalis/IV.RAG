@@ -92,6 +92,19 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers <see cref="EmbeddingMigrator"/> as <see cref="IEmbeddingMigrator"/>.
+    /// Requires <see cref="IVectorStore"/> and <see cref="IEmbedder"/> to be registered.
+    /// </summary>
+    public static RAGBuilder AddEmbeddingMigrator(this RAGBuilder builder)
+    {
+        builder.Services.AddSingleton<IEmbeddingMigrator>(sp => new EmbeddingMigrator(
+            sp.GetRequiredService<IVectorStore>(),
+            sp.GetRequiredService<IEmbedder>(),
+            sp.GetService<ILogger<EmbeddingMigrator>>()));
+        return builder;
+    }
+
+    /// <summary>
     /// Wraps the current <see cref="IRetrievalPipeline"/> with <see cref="CachedRetrievalPipeline"/>.
     /// Requires a prior <c>AddXxxQueryCache()</c> call to register <see cref="IQueryCache"/>.
     /// Call this last, after all pipeline and cache registrations.

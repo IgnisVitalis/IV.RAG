@@ -26,8 +26,7 @@ public sealed class RagPipelineE2ETests : IClassFixture<PostgresContainerFixture
         var postgresOptions = Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = VectorDimension
+            TableName = tableName
         });
         var ollamaOptions = Options.Create(new OllamaOptions
         {
@@ -39,7 +38,7 @@ public sealed class RagPipelineE2ETests : IClassFixture<PostgresContainerFixture
         var chunker = new PlainTextChunkerBridge(new FixedSizeChunker(Options.Create(new FixedSizeChunkerOptions { ChunkSize = 512 })));
         var embedder = new OllamaEmbedder(httpFactory, ollamaOptions);
         var generator = new OllamaGenerator(httpFactory, ollamaOptions);
-        var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
+        var vectorStore = new PostgresVectorStore(_fixture.DataSource, embedder, postgresOptions);
         var retriever = new PostgresRetriever(_fixture.DataSource, embedder, postgresOptions);
 
         var retrieval = new RetrievalPipeline(chunker, embedder, vectorStore, retriever, NullLogger<RetrievalPipeline>.Instance);
