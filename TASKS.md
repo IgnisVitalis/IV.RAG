@@ -19,12 +19,6 @@ Backlog ordered by priority. Complete items are removed.
 
 ## Medium priority
 
-- [ ] **Embedding model versioning**
-  Expose model identity (`provider`, `name`, `version`, `dimensions`) on `IEmbedder`.
-  Store model metadata alongside each vector table.
-  Detect model mismatch on startup and throw a clear error.
-  Add `ClearAsync()` and `GetSourceIdsAsync()` to `IVectorStore` to support re-ingestion.
-
 - [ ] **Multi-table / keyed DI support**
   Allow registering multiple `IVectorStore` instances for different domains.
   Each registration points to a different table with its own model config.
