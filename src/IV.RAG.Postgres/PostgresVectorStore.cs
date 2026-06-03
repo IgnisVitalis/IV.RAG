@@ -20,6 +20,10 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
     private volatile bool _schemaInitialized;
     private int _currentModelId;
 
+    // pgvector can only build an HNSW/IVFFlat index on vectors of up to 2000 dimensions
+    // (on the standard 'vector' type). Above this, index creation is skipped with a warning.
+    private const int MaxIndexableDimensions = 2000;
+
     /// <summary>Initializes a new instance with the provided data source, embedder, and options.</summary>
     public PostgresVectorStore(NpgsqlDataSource dataSource, IEmbedder embedder, IOptions<PostgresOptions> options, ILogger<PostgresVectorStore>? logger = null)
     {
@@ -194,6 +198,7 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             if (_schemaInitialized) return; // double-check inside lock
 
             ValidateLanguage(_options.TextSearchLanguage);
+            ValidateVectorIndexOptions();
 
             var table = _options.TableName;
             var modelsTable = $"{table}_models";
@@ -237,6 +242,11 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             // Phase 2: adapt vector column dimension if it changed
             await AdaptColumnDimensionIfNeededAsync(dimensions, cancellationToken);
 
+            // Phase 2b: create the ANN index on the embedding column. Runs after the column
+            // dimension is settled so a dimension change (which drops the index in Phase 2)
+            // recreates it at the correct size.
+            await EnsureVectorIndexAsync(dimensions, cancellationToken);
+
             // Phase 3: upsert current model to get its id
             _currentModelId = await UpsertModelAsync(dimensions, cancellationToken);
 
@@ -279,8 +289,11 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
 
         // Dimension changed: wipe existing vectors so the column type can be altered.
         // Text is preserved; IEmbeddingMigrator.MigrateAsync() re-embeds everything.
+        // The vector index is dropped first because it depends on the column type;
+        // EnsureVectorIndexAsync recreates it at the new dimension.
         await using var alterCmd = _dataSource.CreateCommand();
         alterCmd.CommandText = $"""
+            DROP INDEX IF EXISTS {_options.TableName}_embedding_idx;
             ALTER TABLE {_options.TableName} ALTER COLUMN embedding DROP NOT NULL;
             ALTER TABLE {_options.TableName} ALTER COLUMN embedding TYPE vector({requiredDimensions}) USING NULL;
             """;
@@ -289,6 +302,39 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             "Embedding column dimension for table '{Table}' changed from {OldDims}d to {NewDims}d. " +
             "Existing vectors have been cleared. Run IEmbeddingMigrator.MigrateAsync() to re-embed all chunks.",
             _options.TableName, storedDimensions, requiredDimensions);
+    }
+
+    private async Task EnsureVectorIndexAsync(int dimensions, CancellationToken ct)
+    {
+        if (_options.VectorIndex == VectorIndexType.None) return;
+
+        var indexName = $"{_options.TableName}_embedding_idx";
+
+        if (dimensions > MaxIndexableDimensions)
+        {
+            _logger?.LogWarning(
+                "Embedding dimension {Dimensions} exceeds the pgvector index limit of {Limit} for the " +
+                "'vector' type; skipping creation of '{Index}'. Similarity queries on table '{Table}' will " +
+                "use an exact sequential scan. Set PostgresOptions.VectorIndex = None to silence this, or " +
+                "use a model with {Limit} or fewer dimensions.",
+                dimensions, MaxIndexableDimensions, indexName, _options.TableName, MaxIndexableDimensions);
+            return;
+        }
+
+        // m / ef_construction / lists are validated integers, so interpolating them into DDL is
+        // injection-safe; pgvector index build parameters cannot be passed as query parameters.
+        var indexClause = _options.VectorIndex switch
+        {
+            VectorIndexType.Hnsw =>
+                $"USING hnsw (embedding vector_cosine_ops) WITH (m = {_options.HnswM}, ef_construction = {_options.HnswEfConstruction})",
+            VectorIndexType.IVFFlat =>
+                $"USING ivfflat (embedding vector_cosine_ops) WITH (lists = {_options.IVFFlatLists})",
+            _ => throw new InvalidOperationException($"Unsupported vector index type '{_options.VectorIndex}'.")
+        };
+
+        await using var cmd = _dataSource.CreateCommand();
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {indexName} ON {_options.TableName} {indexClause}";
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private async Task<int> UpsertModelAsync(int dimensions, CancellationToken ct)
@@ -397,6 +443,27 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             throw new ArgumentException(
                 $"TextSearchLanguage '{language}' is invalid. Use only lowercase letters, digits, and underscores, starting with a letter.",
                 nameof(language));
+    }
+
+    private void ValidateVectorIndexOptions()
+    {
+        switch (_options.VectorIndex)
+        {
+            case VectorIndexType.Hnsw:
+                if (_options.HnswM < 2)
+                    throw new ArgumentException(
+                        $"HnswM must be at least 2 (was {_options.HnswM}).", nameof(PostgresOptions.HnswM));
+                if (_options.HnswEfConstruction < 2 * _options.HnswM)
+                    throw new ArgumentException(
+                        $"HnswEfConstruction must be at least 2 × HnswM ({2 * _options.HnswM}); was {_options.HnswEfConstruction}.",
+                        nameof(PostgresOptions.HnswEfConstruction));
+                break;
+            case VectorIndexType.IVFFlat:
+                if (_options.IVFFlatLists < 1)
+                    throw new ArgumentException(
+                        $"IVFFlatLists must be at least 1 (was {_options.IVFFlatLists}).", nameof(PostgresOptions.IVFFlatLists));
+                break;
+        }
     }
 
     /// <inheritdoc/>

@@ -187,6 +187,33 @@ Migration re-embeds all outdated chunks **in-place** — no data loss, no re-fet
 
 After a complete migration the next clean startup tightens the `model_id NOT NULL` constraint automatically.
 
+## Vector index (ANN)
+
+By default `PostgresVectorStore` creates an **HNSW** index on the `embedding` column so similarity search uses approximate nearest-neighbor lookups instead of an exact sequential scan (whose latency grows linearly with the corpus). The index is created automatically during schema initialization and uses the `vector_cosine_ops` opclass to match the cosine distance operator used by `PostgresRetriever`.
+
+```csharp
+.AddPostgresVectorStore(o =>
+{
+    o.ConnectionString = "...";
+    o.VectorIndex = VectorIndexType.Hnsw; // None | Hnsw (default) | IVFFlat
+    o.HnswM = 16;                         // connections per layer (default 16)
+    o.HnswEfConstruction = 64;            // build-time candidate list (default 64, must be ≥ 2 × HnswM)
+})
+```
+
+| `VectorIndex` | When to use |
+|---|---|
+| `Hnsw` *(default)* | General purpose. Builds incrementally as rows are inserted, so it works well even on an initially empty table. |
+| `IVFFlat` | Lower build cost / memory at large scale. Tune `IVFFlatLists` (≈ `rows / 1000`). |
+| `None` | Exact search only — small corpora, or when you manage indexes via external migrations. |
+
+**Caveats:**
+
+- **Dimension limit.** pgvector can only index vectors of up to **2000 dimensions** on the `vector` type. For higher-dimension models the index is skipped (a warning is logged) and queries fall back to an exact scan. Set `VectorIndex = None` to silence the warning.
+- **IVFFlat on an empty table.** IVFFlat derives its cluster centroids from existing rows, so an index built before data is loaded has poor recall. After a large initial load, run `REINDEX INDEX {tableName}_embedding_idx` to rebuild it against the real data. HNSW does not have this limitation.
+- **Bulk loads.** Building the index is faster *after* a bulk insert than incrementally during one. When loading a large existing corpus for the first time, the initial index build runs synchronously on the first store operation.
+- **Dimension changes.** When the embedding dimension changes (see above), the index is dropped and recreated automatically at the new size.
+
 ## Quick start
 
 ### Ingest and query

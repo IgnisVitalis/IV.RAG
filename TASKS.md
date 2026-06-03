@@ -10,24 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 1 — Production-readiness blockers
 
-- [ ] **ANN vector index (HNSW / IVFFlat)**
-  Today no index is created on the `embedding` column, so every similarity query is an exact
-  KNN sequential scan (`ORDER BY embedding <=> @embedding` in `PostgresRetriever.cs:49`).
-  Latency grows linearly with corpus size — the single biggest performance gap.
-  - Add an index-type option to `PostgresOptions`:
-    `VectorIndex { None | Hnsw | IVFFlat }` (default `Hnsw`), plus tunables
-    (`HnswM`, `HnswEfConstruction`, `IVFFlatLists`) and a distance-ops choice tied to the
-    similarity metric (`vector_cosine_ops` to match the current cosine usage).
-  - In `PostgresVectorStore.EnsureSchemaAsync` (after the table exists and dimension is
-    resolved), `CREATE INDEX IF NOT EXISTS {table}_embedding_idx ON {table}
-    USING hnsw (embedding vector_cosine_ops) WITH (m = …, ef_construction = …)`.
-  - Handle the dimension-change path: when `AdaptColumnDimensionIfNeededAsync` retypes the
-    column, drop and recreate the vector index.
-  - Document the large-initial-load caveat (index build is faster *after* bulk insert);
-    consider a `BuildVectorIndex` deferral hook or guidance in README.
-  - Add an integration test asserting the index exists and that an `EXPLAIN` of a retrieval
-    query uses an index scan (or at least that results are unchanged with the index present).
-
 - [ ] **Cross-process coordination for schema DDL**
   `EnsureSchemaAsync` is guarded only by a process-local `SemaphoreSlim`
   (`PostgresVectorStore.cs:191`). The destructive paths — `ALTER COLUMN ... TYPE

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-03
+
+### Added
+
+- **ANN vector index** — `PostgresVectorStore` now creates an approximate-nearest-neighbor index on the `embedding` column during schema initialization, so similarity search uses an index scan instead of an exact sequential scan (whose latency grows linearly with corpus size). The index uses the `vector_cosine_ops` opclass to match the cosine distance operator (`<=>`) used by `PostgresRetriever`.
+- `VectorIndexType` enum (`IV.RAG.Postgres`) — `None`, `Hnsw`, `IVFFlat`.
+- `PostgresOptions.VectorIndex` — index strategy, defaults to `VectorIndexType.Hnsw`.
+- `PostgresOptions.HnswM` (default 16) and `PostgresOptions.HnswEfConstruction` (default 64) — HNSW build parameters. Validated at schema init: `HnswM >= 2`, `HnswEfConstruction >= 2 × HnswM`.
+- `PostgresOptions.IVFFlatLists` (default 100) — IVFFlat list count. Validated at schema init: `>= 1`.
+
+### Changed
+
+- `PostgresVectorStore` creates the `{tableName}_embedding_idx` index by default (HNSW, built incrementally as rows are inserted). Set `PostgresOptions.VectorIndex = None` to opt out (exact search only). Note: when upgrading an existing deployment, the index is built on the first store operation — for a large existing table this initial build runs synchronously.
+- Embedding dimensions above pgvector's 2000-dimension index limit (for the `vector` type) skip index creation with a logged warning; queries fall back to an exact scan.
+- The embedding-dimension-change path now drops and recreates the vector index at the new dimension (the index depends on the column type, so it is dropped before the `ALTER COLUMN` and recreated afterward).
+
 ## [0.9.0] - 2026-06-03
 
 ### Added

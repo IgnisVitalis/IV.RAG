@@ -9,7 +9,7 @@
 
   <!-- NuGet package metadata — only relevant for src packages -->
   <PropertyGroup Condition="'$(IsPackable)' != 'false'">
-    <Version>0.9.0</Version>
+    <Version>0.10.0</Version>
     <Authors>Victor Suvorov</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>rag;llm;ai;vector;embeddings;hybrid-search;bm25;reranking</PackageTags>
