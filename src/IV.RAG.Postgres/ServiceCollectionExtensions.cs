@@ -9,7 +9,8 @@ namespace IV.RAG;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="PostgresVectorStore"/> and <see cref="PostgresRetriever"/>
+    /// Registers <see cref="PostgresVectorStore"/> as <see cref="IVectorStore"/> and
+    /// <see cref="PostgresRetriever"/> as <see cref="IRetriever"/>,
     /// backed by a pgvector-enabled <see cref="NpgsqlDataSource"/>.
     /// </summary>
     /// <remarks>
@@ -33,6 +34,38 @@ public static class ServiceCollectionExtensions
 
         builder.Services.AddSingleton<IVectorStore, PostgresVectorStore>();
         builder.Services.AddSingleton<IRetriever, PostgresRetriever>();
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers <see cref="PostgresLexicalRetriever"/> as <see cref="ILexicalRetriever"/>
+    /// for use with hybrid retrieval.
+    /// </summary>
+    /// <remarks>
+    /// Requires <see cref="AddPostgresVectorStore"/> to be called first.
+    /// The <c>text_search</c> GIN index is created automatically by
+    /// <see cref="PostgresVectorStore"/> during the first ingestion.
+    /// Chain <c>.AddHybridRetrievalPipeline()</c> to wire everything together.
+    /// </remarks>
+    public static RAGBuilder AddPostgresLexicalRetriever(this RAGBuilder builder)
+    {
+        builder.Services.AddSingleton<ILexicalRetriever, PostgresLexicalRetriever>();
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers <see cref="PostgresQueryCache"/> as <see cref="IQueryCache"/>.
+    /// Requires <see cref="AddPostgresVectorStore"/> to be called first.
+    /// Call <c>.AddCachedRetrieval()</c> (from <c>IV.RAG.Core</c>) after this to enable
+    /// caching on the retrieval pipeline.
+    /// </summary>
+    public static RAGBuilder AddPostgresQueryCache(
+        this RAGBuilder builder,
+        Action<QueryCacheOptions>? configure = null)
+    {
+        if (configure is not null)
+            builder.Services.Configure<QueryCacheOptions>(configure);
+        builder.Services.AddSingleton<IQueryCache, PostgresQueryCache>();
         return builder;
     }
 }

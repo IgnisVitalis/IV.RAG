@@ -9,10 +9,10 @@ A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pi
 | Package | Description |
 |---|---|
 | `IV.RAG.Abstractions` | Core interfaces and models. No dependencies. Domain projects depend only on this. |
-| `IV.RAG.Core` | Pipeline orchestrators (`RagPipeline`, `RetrievalPipeline`, `AnswerPipeline`). Depends only on Abstractions. |
+| `IV.RAG.Core` | Pipeline orchestrators (`RagPipeline`, `RetrievalPipeline`, `AnswerPipeline`, `HybridRetrievalPipeline`, `CachedRetrievalPipeline`). Depends only on Abstractions. |
 | `IV.RAG.Ingestion` | Document types and chunkers (`PlainTextDocument`, `FixedSizeChunker`, `SentenceChunker`). |
 | `IV.RAG.Ollama` | `IEmbedder` and `IGenerator` backed by Ollama (`/api/embed`, `/api/chat`). |
-| `IV.RAG.Postgres` | `IVectorStore` and `IRetriever` backed by PostgreSQL + pgvector. |
+| `IV.RAG.Postgres` | `IVectorStore`, `IRetriever`, and `ILexicalRetriever` backed by PostgreSQL + pgvector + full-text search. |
 | `IV.RAG.Remote.Http` | `IRetrievalPipeline` proxy — forwards queries to a remote retrieval server over HTTP. |
 
 ## Deployment topologies
@@ -36,6 +36,73 @@ services.AddRagToolkit()
         o.VectorDimension = 768;
     });
 ```
+
+### Hybrid search (vector + lexical)
+
+Adds a BM25 lexical retriever alongside the vector retriever. Results are fused via Reciprocal Rank Fusion (RRF) — chunks found by both sources rank higher than chunks found by only one. Optional cross-encoder reranking can be applied after fusion.
+
+```csharp
+services.AddRagToolkit()
+    .AddSentenceChunker()
+    .AddOllamaEmbedder(o => o.EmbeddingModel = "nomic-embed-text")
+    .AddOllamaGenerator(o => o.GenerationModel = "llama3.2")
+    .AddPostgresVectorStore(o =>
+    {
+        o.ConnectionString = "...";
+        o.VectorDimension = 768;
+    })
+    .AddPostgresLexicalRetriever()        // adds ILexicalRetriever (tsvector/tsquery)
+    .AddHybridRetrievalPipeline(o =>      // replaces IRetrievalPipeline with hybrid
+    {
+        o.RrfK = 60;                      // RRF constant (default 60)
+        o.CandidateMultiplier = 3;        // fetch 3× TopK candidates per source (default 3)
+    });
+```
+
+Ingestion is unaffected — `IIngestionPipeline` remains on `RetrievalPipeline`. Only queries go through `HybridRetrievalPipeline`.
+
+#### Optional reranking
+
+If you register an `IReranker`, it is automatically applied after RRF fusion:
+
+```csharp
+services.AddSingleton<IReranker, MyReranker>(); // your cross-encoder implementation
+services.AddRagToolkit()
+    ...
+    .AddHybridRetrievalPipeline();             // picks up IReranker automatically
+```
+
+The reranker receives the full fused candidate list and returns the top `TopK` results re-scored by the model.
+
+### Semantic query cache
+
+Wraps any retrieval pipeline with a transparent semantic cache. Semantically similar queries return cached results without hitting the vector store or embedder again. Works with both vector-only and hybrid pipelines.
+
+```csharp
+services.AddRagToolkit()
+    .AddSentenceChunker()
+    .AddOllamaEmbedder(o => o.EmbeddingModel = "nomic-embed-text")
+    .AddOllamaGenerator(o => o.GenerationModel = "llama3.2")
+    .AddPostgresVectorStore(o => { o.ConnectionString = "..."; o.VectorDimension = 768; })
+    .AddInMemoryQueryCache(o =>
+    {
+        o.SimilarityThreshold = 0.95f; // minimum cosine similarity for a cache hit
+        o.Ttl = TimeSpan.FromHours(1); // entry lifetime
+        o.MaxEntries = 1000;           // max entries retained (in-memory only)
+    })
+    .AddCachedRetrieval();             // must be called last
+```
+
+Use `AddPostgresQueryCache()` instead of `AddInMemoryQueryCache()` to store the cache in PostgreSQL — useful when multiple instances share one cache or when cache persistence across restarts is required:
+
+```csharp
+    .AddPostgresQueryCache(o => o.SimilarityThreshold = 0.95f)
+    .AddCachedRetrieval();
+```
+
+**Cache invalidation:** when a document is re-ingested, all cache entries that previously returned chunks from that document are removed automatically. New documents do not trigger invalidation (no existing entry references them); TTL handles those entries naturally.
+
+**Empty results are not cached** — a query that finds nothing is always forwarded to the inner pipeline, so results appear as soon as matching documents are ingested.
 
 ### Server — retrieval only
 
@@ -81,7 +148,7 @@ await pipeline.IngestAsync(new PlainTextDocument
 // Query — returns ranked chunks
 var results = await pipeline.QueryAsync("your question");
 foreach (var result in results)
-    Console.WriteLine($"[{result.Score:F2}] {result.Chunk.Text}");
+    Console.WriteLine($"[{result.Score:F4}] {result.Chunk.Text}");
 
 // Answer — retrieve + generate in one call
 var answer = await pipeline.AnswerAsync("your question");
@@ -186,10 +253,34 @@ The dispatcher routes each document to its registered chunker automatically. If 
 ### Pipeline flow
 
 ```
-Ingest:  Document → IChunker<T> → IEmbedder → IVectorStore
-Query:   string   → IEmbedder   → IRetriever → IReadOnlyList<SearchResult>
-Answer:  string   → QueryAsync  → IGenerator → string
+Ingest:  Document → IChunker<T> → IEmbedder → IVectorStore → [IQueryCache.Invalidate]
+
+Query (vector only):
+         string → IEmbedder → [IQueryCache.Get] → hit: cached results
+                                                 → miss: IRetriever → IQueryCache.Set → results
+
+Query (hybrid):
+         string → IRetriever (vector)   ─┐
+               → ILexicalRetriever      ─┤ RRF fusion → [IReranker] → IReadOnlyList<SearchResult>
+         (cache wraps the full hybrid pipeline at the IRetrievalPipeline level)
+
+Answer:  string → QueryAsync → IGenerator → string
 ```
+
+### Extension points
+
+| Interface | Provided by | Purpose |
+|---|---|---|
+| `IChunker<TDoc>` | `IV.RAG.Ingestion` or custom | Split documents into chunks |
+| `IEmbedder` | `IV.RAG.Ollama` or custom | Generate vector embeddings |
+| `IGenerator` | `IV.RAG.Ollama` or custom | Generate answers from retrieved chunks |
+| `IVectorStore` | `IV.RAG.Postgres` or custom | Persist and manage chunks |
+| `IRetriever` | `IV.RAG.Postgres` or custom | Vector similarity search |
+| `ILexicalRetriever` | `IV.RAG.Postgres` or custom | Keyword/BM25 search |
+| `IReranker` | custom | Cross-encoder reranking after fusion |
+| `IQueryCache` | `IV.RAG.Core` (in-memory), `IV.RAG.Postgres` | Semantic query result cache |
+
+Each interface lives in `IV.RAG.Abstractions`. Swap any implementation in one DI registration — no other code changes required.
 
 ### Document identity
 
@@ -219,37 +310,27 @@ The pipeline automatically enriches each chunk before storage:
 | `Chunk.ChunkIndex` | `RetrievalPipeline` | Zero-based position within the document |
 | `Chunk.Metadata` | `IChunker<T>` | Propagated from `Document.Metadata` |
 
-### Similarity score
+### Relevance score
 
-`SearchResult.Score` is cosine similarity in `[-1, 1]`:
-- `1.0` — identical meaning
-- `0.0` — unrelated (orthogonal)
-- `-1.0` — opposite meaning
+`SearchResult.Score` represents relevance — higher is more relevant. The exact semantics depend on the retriever in use:
 
-`RetrievalOptions.MinScore` defaults to `0.0` — results with score `<= 0` are excluded.
+| Retriever | Score range | Meaning |
+|---|---|---|
+| `PostgresRetriever` (vector only) | `[-1, 1]` | Cosine similarity: 1 = identical, 0 = unrelated, -1 = opposite |
+| `HybridRetrievalPipeline` (RRF) | `(0, ∞)` | Sum of `1/(k+rank)` across sources; typically `0.01`–`0.04` |
+| After reranking | model-specific | Relevance score from the cross-encoder |
 
-### Adding a new provider
-
-Create a new project referencing only `IV.RAG.Abstractions`, implement the relevant interface, and register via a `RAGBuilder` extension:
-
-```csharp
-// IV.RAG.Qdrant
-public static RAGBuilder AddQdrantVectorStore(
-    this RAGBuilder builder,
-    Action<QdrantOptions> configure) { ... }
-```
-
-The consumer swaps one line in DI — no other code changes.
+`RetrievalOptions.MinScore` is applied inside the vector retriever before fusion. The lexical retriever and RRF fusion scores are not filtered by `MinScore`.
 
 ## Solution structure
 
 ```
 src/
   IV.RAG.Abstractions/     ← interfaces + models
-  IV.RAG.Core/             ← pipeline orchestrators
+  IV.RAG.Core/             ← pipeline orchestrators (incl. HybridRetrievalPipeline)
   IV.RAG.Ingestion/        ← chunkers + document types
   IV.RAG.Ollama/           ← embedder + generator
-  IV.RAG.Postgres/         ← vector store + retriever
+  IV.RAG.Postgres/         ← vector store + vector retriever + lexical retriever
   IV.RAG.Remote.Http/      ← remote retrieval proxy
 tests/
   unit/                    ← no infrastructure required
@@ -285,7 +366,7 @@ var results = await pipeline.QueryAsync(
     new RetrievalOptions
     {
         TopK = 10,       // maximum results to return
-        MinScore = 0.7f, // only return highly relevant results
+        MinScore = 0.7f, // minimum vector similarity (applied inside IRetriever, before fusion)
         MetadataFilter = MetadataFilter.Eq("department", "engineering")
     });
 ```
@@ -354,4 +435,4 @@ var results = await pipeline.QueryAsync(
     });
 ```
 
-Filters are pushed down to the database — the `TopK` limit is applied to the already-filtered result set.
+Filters are pushed down to the database — the `TopK` limit is applied to the already-filtered result set. In hybrid search, the filter is propagated to both the vector retriever and the lexical retriever independently.

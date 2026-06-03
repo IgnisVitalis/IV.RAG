@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-03
+
+### Added
+
+- `IQueryCache` (`Abstractions`) — semantic query cache interface. Lookups are similarity-based: a stored result is returned when a cached query embedding is within the configured cosine similarity threshold of the incoming embedding, combined with exact `RetrievalOptions` equality. Results are invalidated automatically when a document is re-ingested via `RetrievalPipeline`.
+- `QueryCacheOptions` (`Abstractions`) — `SimilarityThreshold` (default 0.95), `Ttl` (default 1 hour), `MaxEntries` (default 1000, in-memory only).
+- `CachedRetrievalPipeline` (`Core`) — transparent decorator for any `IRetrievalPipeline`. Embeds the query once, checks the cache by cosine similarity, and falls through to the inner pipeline on a miss. Empty results are never cached, preventing stale "no results" entries that document ingestion cannot invalidate.
+- `InMemoryQueryCache` (`Core`) — thread-safe in-memory `IQueryCache`. Options key is the JSON-serialized `RetrievalOptions` (handles all `MetadataFilter` subtypes). TTL expiry on every read and write; expired entries are pruned before the `MaxEntries` capacity check to avoid premature eviction of valid entries.
+- `PostgresQueryCache` (`IV.RAG.Postgres`) — pgvector-backed `IQueryCache`. Stores query embeddings and results in a dedicated table (`query_cache` by default). Similarity lookup via the `<=>` cosine distance operator. Expired rows cleaned up on every write. Schema auto-created on first use.
+- `PostgresOptions.QueryCacheTableName` — name of the query cache table (default `"query_cache"`).
+- `AddInMemoryQueryCache()` (`Core`) — registers `InMemoryQueryCache` as `IQueryCache`. Accepts an optional `Action<QueryCacheOptions>` configure delegate.
+- `AddPostgresQueryCache()` (`IV.RAG.Postgres`) — registers `PostgresQueryCache` as `IQueryCache`. Requires `AddPostgresVectorStore()` to be called first. Accepts an optional `Action<QueryCacheOptions>` configure delegate.
+- `AddCachedRetrieval()` (`Core`) — wraps the currently registered `IRetrievalPipeline` with `CachedRetrievalPipeline`. Must be called last, after all pipeline and cache registrations. Works with both `RetrievalPipeline` (vector-only) and `HybridRetrievalPipeline`.
+
+### Changed
+
+- **Breaking:** `RetrievalOptions` changed from `sealed class` to `sealed record`. Structural equality is now the default. Note: `MetadataFilter` subtypes that hold `IReadOnlyList<T>` fields (`InMetadataFilter`, `AndMetadataFilter`, `OrMetadataFilter`) use reference equality for those collections — two independently-constructed identical filters will not compare equal via `==`. The cache itself is unaffected (uses JSON comparison), but callers that compare `RetrievalOptions` instances directly should be aware.
+- `RetrievalPipeline.IngestAsync` now calls `IQueryCache.InvalidateByDocumentAsync` after storing chunks, when `IQueryCache` is registered in DI. The invalidation is transparent — no changes to existing ingest code.
+- `AddHybridRetrievalPipeline()` now registers `HybridRetrievalPipeline` as a concrete singleton in addition to the `IRetrievalPipeline` binding, required for the keyed-service decorator pattern used by `AddCachedRetrieval()`.
+
+## [0.7.0] - 2026-06-02
+
+### Added
+
+- `ILexicalRetriever` (`Abstractions`) — keyword/BM25 search interface. Same signature as `IRetriever` (`RetrieveAsync(string query, RetrievalOptions, CancellationToken)`) but semantically distinct: implementations use full-text matching rather than vector similarity. `MinScore` is not applied — the full-text match predicate already ensures only matching chunks are returned.
+- `IReranker` (`Abstractions`) — optional cross-encoder reranking interface. `RerankAsync(query, candidates, topK)` re-scores a candidate list and returns the top `topK` results. Register an implementation to enable post-fusion reranking in `HybridRetrievalPipeline`. No implementation is provided in this release — wire your own cross-encoder (e.g. an Ollama reranker model).
+- `HybridRetrievalPipeline` (`Core`) — implements `IRetrievalPipeline` by combining `IRetriever` (vector search) and `ILexicalRetriever` (keyword search) via Reciprocal Rank Fusion (RRF). Both sub-retrievers are queried in parallel with an expanded candidate count (`CandidateMultiplier × TopK`). RRF score for a chunk is the sum of `1 / (k + rank)` across all lists it appears in — chunks found by both retrievers rank higher than those found by only one. If an `IReranker` is registered, the full fused list is passed to it before trimming to `TopK`.
+- `HybridRetrievalOptions` (`Core`) — `RrfK` (RRF constant, default 60) and `CandidateMultiplier` (candidates fetched per source as a multiple of `TopK`, default 3).
+- `AddHybridRetrievalPipeline()` (`Core`) — overrides `IRetrievalPipeline` with `HybridRetrievalPipeline`. Ingestion remains on `RetrievalPipeline` — only queries are affected. Accepts an optional `Action<HybridRetrievalOptions>` configure delegate.
+- `PostgresLexicalRetriever` (`IV.RAG.Postgres`) — implements `ILexicalRetriever` using PostgreSQL full-text search (`text_search @@ plainto_tsquery`). Results are ordered by `ts_rank`. Supports `MetadataFilter` via the same SQL builder used by `PostgresRetriever`.
+- `AddPostgresLexicalRetriever()` (`IV.RAG.Postgres`) — registers `PostgresLexicalRetriever` as `ILexicalRetriever`. Requires `AddPostgresVectorStore()` to be called first.
+- `PostgresOptions.TextSearchLanguage` — PostgreSQL text search configuration name used for the `text_search` generated column and for `plainto_tsquery`. Defaults to `"english"`. Use `"simple"` for language-agnostic matching without stemming. Must be set before first ingestion — the value is baked into the `GENERATED ALWAYS AS` column definition.
+
+### Changed
+
+- **Breaking:** `IRetriever.RetrieveAsync` signature changed from `(float[] embedding, RetrievalOptions, CancellationToken)` to `(string query, RetrievalOptions, CancellationToken)`. Vector embeddings are now computed inside `PostgresRetriever` — any custom `IRetriever` implementation must be updated to accept a query string and embed internally.
+- **Breaking:** `PostgresRetriever` now requires an `IEmbedder` constructor argument. Existing manual construction sites must add the embedder.
+- **Breaking:** `PostgresVectorStore` schema now includes a `text_search TSVECTOR GENERATED ALWAYS AS (to_tsvector(...)) STORED` column and a GIN index. Existing tables must be dropped and recreated. Run `DROP TABLE chunks` before starting the application after upgrading.
+- **Breaking:** Options properties changed from `init` to `set` across `PostgresOptions`, `OllamaOptions`, and `RemoteOptions`. Configure-lambda DI registration (e.g. `AddPostgresVectorStore(o => { o.ConnectionString = "..."; })`) now works correctly. Object-initializer construction is unchanged.
+- `RetrievalPipeline.QueryAsync` no longer embeds the query string — embedding is delegated to the `IRetriever` implementation. The embedder is still required by `RetrievalPipeline` for ingestion (`IngestAsync`).
+- `SearchResult.Score` semantics broadened: cosine similarity in `[-1, 1]` for vector-only retrieval; RRF fusion score (sum of `1/(k+rank)` terms, typically `0.01`–`0.04`) for hybrid retrieval; model-specific score after reranking.
+
 ## [0.6.0] - 2026-06-02
 
 ### Added

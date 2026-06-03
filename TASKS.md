@@ -19,18 +19,6 @@ Backlog ordered by priority. Complete items are removed.
 
 ## Medium priority
 
-- [ ] **Hybrid search (vector + lexical/BM25)**
-  Add `ILexicalRetriever` interface alongside `IRetriever`.
-  Add `HybridRetriever` in Core that fuses both rankings via Reciprocal Rank Fusion (RRF).
-  Add `PostgresLexicalRetriever` backed by `tsvector/tsquery`.
-
-- [ ] **Semantic query cache**
-  Add `IQueryCache` interface. Cache query embeddings and their results.
-  Add `CachedRagPipeline` decorator in Core (transparent to consumers).
-  Add in-memory implementation in Core.
-  Add Postgres implementation in the Postgres package.
-  Configurable similarity threshold (default 0.95) and TTL.
-
 - [ ] **Embedding model versioning**
   Expose model identity (`provider`, `name`, `version`, `dimensions`) on `IEmbedder`.
   Store model metadata alongside each vector table.

@@ -36,7 +36,7 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
 
         var chunker = new PlainTextChunkerBridge(new FixedSizeChunker(chunkerOptions));
         var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
-        var retriever = new PostgresRetriever(_fixture.DataSource, postgresOptions);
+        var retriever = new PostgresRetriever(_fixture.DataSource, embedder, postgresOptions);
 
         var retrieval = new RetrievalPipeline(chunker, embedder, vectorStore, retriever, NullLogger<RetrievalPipeline>.Instance);
         return new RagPipeline(retrieval, retrieval, new NullGenerator(), NullLogger<RagPipeline>.Instance);
@@ -140,7 +140,7 @@ public sealed class RagPipelineIntegrationTests : IClassFixture<PostgresContaine
         services.AddSingleton(embedder);
         services.AddSingleton<IGenerator>(new NullGenerator());
         services.AddSingleton<IVectorStore>(_ => new PostgresVectorStore(_fixture.DataSource, postgresOptions));
-        services.AddSingleton<IRetriever>(_ => new PostgresRetriever(_fixture.DataSource, postgresOptions));
+        services.AddSingleton<IRetriever>(sp => new PostgresRetriever(_fixture.DataSource, sp.GetRequiredService<IEmbedder>(), postgresOptions));
         services.AddRagToolkit().AddPlainTextChunker();
         return services.BuildServiceProvider().GetRequiredService<IRagPipeline>();
     }

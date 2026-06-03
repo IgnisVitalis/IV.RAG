@@ -9,10 +9,10 @@
 
   <!-- NuGet package metadata — only relevant for src packages -->
   <PropertyGroup Condition="'$(IsPackable)' != 'false'">
-    <Version>0.6.0</Version>
+    <Version>0.8.0</Version>
     <Authors>Victor Suvorov</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageTags>rag;llm;ai;vector;embeddings</PackageTags>
+    <PackageTags>rag;llm;ai;vector;embeddings;hybrid-search;bm25;reranking</PackageTags>
     <Description>RAG Toolkit for .NET</Description>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>

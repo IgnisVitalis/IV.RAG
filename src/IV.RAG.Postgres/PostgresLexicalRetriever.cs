@@ -1,23 +1,30 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using Pgvector;
 
 namespace IV.RAG;
 
-/// <summary>Retrieves chunks from PostgreSQL using pgvector cosine similarity search.</summary>
-public sealed class PostgresRetriever : IRetriever
+/// <summary>
+/// Retrieves chunks from PostgreSQL using full-text search (<c>tsvector</c> / <c>tsquery</c>).
+/// Scores are computed by <c>ts_rank</c>. Results are ordered by descending rank
+/// and capped at <see cref="RetrievalOptions.TopK"/>.
+/// </summary>
+/// <remarks>
+/// Requires the <c>text_search</c> GIN-indexed column created by
+/// <see cref="PostgresVectorStore.SetAsync"/> (via <c>EnsureSchemaAsync</c>).
+/// The text search configuration (<see cref="PostgresOptions.TextSearchLanguage"/>)
+/// must match the language used during ingestion.
+/// </remarks>
+public sealed class PostgresLexicalRetriever : ILexicalRetriever
 {
     private readonly NpgsqlDataSource _dataSource;
-    private readonly IEmbedder _embedder;
-    private readonly string _tableName;
+    private readonly PostgresOptions _options;
 
-    /// <summary>Initializes a new instance with the provided data source, embedder, and options.</summary>
-    public PostgresRetriever(NpgsqlDataSource dataSource, IEmbedder embedder, IOptions<PostgresOptions> options)
+    /// <summary>Initializes a new instance with the provided data source and options.</summary>
+    public PostgresLexicalRetriever(NpgsqlDataSource dataSource, IOptions<PostgresOptions> options)
     {
         _dataSource = dataSource;
-        _embedder = embedder;
-        _tableName = options.Value.TableName;
+        _options = options.Value;
     }
 
     /// <inheritdoc/>
@@ -26,8 +33,6 @@ public sealed class PostgresRetriever : IRetriever
         RetrievalOptions options,
         CancellationToken cancellationToken = default)
     {
-        var embedding = await _embedder.EmbedAsync(query, cancellationToken);
-
         await using var cmd = _dataSource.CreateCommand();
 
         var filterClause = string.Empty;
@@ -39,19 +44,17 @@ public sealed class PostgresRetriever : IRetriever
                 cmd.Parameters.Add(p);
         }
 
-        // <=> is cosine distance [0, 2]; converting to cosine similarity [-1, 1]
-        // Uses > (not >=) so MinScore = 0.0 excludes orthogonal chunks (score exactly 0)
         cmd.CommandText = $"""
-            SELECT id, text, metadata, 1 - (embedding <=> @embedding) AS score,
+            SELECT id, text, metadata, ts_rank(text_search, plainto_tsquery(@lang::regconfig, @query)) AS score,
                    source_id, document_type, document_id, chunk_index
-            FROM {_tableName}
-            WHERE 1 - (embedding <=> @embedding) > @minScore{filterClause}
-            ORDER BY embedding <=> @embedding
+            FROM {_options.TableName}
+            WHERE text_search @@ plainto_tsquery(@lang::regconfig, @query){filterClause}
+            ORDER BY score DESC
             LIMIT @topK
             """;
 
-        cmd.Parameters.AddWithValue("embedding", new Vector(embedding));
-        cmd.Parameters.AddWithValue("minScore", (double)options.MinScore);
+        cmd.Parameters.AddWithValue("lang", _options.TextSearchLanguage);
+        cmd.Parameters.AddWithValue("query", query);
         cmd.Parameters.AddWithValue("topK", options.TopK);
 
         var results = new List<SearchResult>();

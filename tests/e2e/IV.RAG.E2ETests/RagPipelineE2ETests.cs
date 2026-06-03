@@ -40,7 +40,7 @@ public sealed class RagPipelineE2ETests : IClassFixture<PostgresContainerFixture
         var embedder = new OllamaEmbedder(httpFactory, ollamaOptions);
         var generator = new OllamaGenerator(httpFactory, ollamaOptions);
         var vectorStore = new PostgresVectorStore(_fixture.DataSource, postgresOptions);
-        var retriever = new PostgresRetriever(_fixture.DataSource, postgresOptions);
+        var retriever = new PostgresRetriever(_fixture.DataSource, embedder, postgresOptions);
 
         var retrieval = new RetrievalPipeline(chunker, embedder, vectorStore, retriever, NullLogger<RetrievalPipeline>.Instance);
         return new RagPipeline(retrieval, retrieval, generator, NullLogger<RagPipeline>.Instance);

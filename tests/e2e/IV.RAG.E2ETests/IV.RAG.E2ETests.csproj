@@ -19,10 +19,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\src\IV.RAG.Core\IV.RAG.Core.csproj" />
     <ProjectReference Include="..\..\..\src\IV.RAG.Ingestion\IV.RAG.Ingestion.csproj" />
     <ProjectReference Include="..\..\..\src\IV.RAG.Ollama\IV.RAG.Ollama.csproj" />
     <ProjectReference Include="..\..\..\src\IV.RAG.Postgres\IV.RAG.Postgres.csproj" />
+    <ProjectReference Include="..\..\..\src\IV.RAG.Remote.Http\IV.RAG.Remote.Http.csproj" />
   </ItemGroup>
 
 </Project>

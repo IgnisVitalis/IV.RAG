@@ -4,8 +4,8 @@ namespace IV.RAG;
 public sealed class RemoteOptions
 {
     /// <summary>Base URL of the retrieval server. Defaults to <c>http://localhost:5000</c>.</summary>
-    public string Endpoint { get; init; } = "http://localhost:5000";
+    public string Endpoint { get; set; } = "http://localhost:5000";
 
     /// <summary>Path of the query endpoint. Defaults to <c>/api/query</c>.</summary>
-    public string QueryPath { get; init; } = "/api/query";
+    public string QueryPath { get; set; } = "/api/query";
 }

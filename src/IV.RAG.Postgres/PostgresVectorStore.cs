@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -113,6 +114,8 @@ public sealed class PostgresVectorStore : IVectorStore
         if (Interlocked.Exchange(ref _schemaInitialized, 1) != 0)
             return;
 
+        ValidateLanguage(_options.TextSearchLanguage);
+
         await using var cmd = _dataSource.CreateCommand();
         cmd.CommandText = $"""
             CREATE TABLE IF NOT EXISTS {_options.TableName} (
@@ -123,12 +126,25 @@ public sealed class PostgresVectorStore : IVectorStore
                 source_id     UUID NOT NULL,
                 document_type TEXT NOT NULL,
                 document_id   TEXT NOT NULL,
-                chunk_index   INT
+                chunk_index   INT,
+                text_search   TSVECTOR GENERATED ALWAYS AS (to_tsvector('{_options.TextSearchLanguage}'::regconfig, text)) STORED
             );
             CREATE INDEX IF NOT EXISTS {_options.TableName}_origin_idx
                 ON {_options.TableName} (source_id, document_type, document_id);
+            CREATE INDEX IF NOT EXISTS {_options.TableName}_text_search_idx
+                ON {_options.TableName} USING GIN (text_search);
             """;
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static readonly Regex SafeLanguage = new(@"^[a-z][a-z0-9_]*$", RegexOptions.Compiled);
+
+    private static void ValidateLanguage(string language)
+    {
+        if (!SafeLanguage.IsMatch(language))
+            throw new ArgumentException(
+                $"TextSearchLanguage '{language}' is invalid. Use only lowercase letters, digits, and underscores, starting with a letter.",
+                nameof(language));
     }
 }

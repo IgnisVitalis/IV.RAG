@@ -11,6 +11,7 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline
     private readonly IEmbedder _embedder;
     private readonly IVectorStore _vectorStore;
     private readonly IRetriever _retriever;
+    private readonly IQueryCache? _queryCache;
     private readonly ILogger<RetrievalPipeline> _logger;
 
     /// <summary>Initializes a new instance with all required retrieval components.</summary>
@@ -19,13 +20,15 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline
         IEmbedder embedder,
         IVectorStore vectorStore,
         IRetriever retriever,
-        ILogger<RetrievalPipeline> logger)
+        ILogger<RetrievalPipeline> logger,
+        IQueryCache? queryCache = null)
     {
         _chunker = chunker;
         _embedder = embedder;
         _vectorStore = vectorStore;
         _retriever = retriever;
         _logger = logger;
+        _queryCache = queryCache;
     }
 
     /// <inheritdoc/>
@@ -43,6 +46,9 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline
 
         await _vectorStore.SetAsync(document.Source, chunks, cancellationToken);
         _logger.LogDebug("Ingested {Count} chunks.", chunks.Count);
+
+        if (_queryCache is not null)
+            await _queryCache.InvalidateByDocumentAsync(document.Source, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -53,8 +59,7 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline
     {
         _logger.LogDebug("Querying: \"{Query}\".", query);
 
-        var embedding = await _embedder.EmbedAsync(query, cancellationToken);
-        var results = await _retriever.RetrieveAsync(embedding, options ?? new RetrievalOptions(), cancellationToken);
+        var results = await _retriever.RetrieveAsync(query, options ?? new RetrievalOptions(), cancellationToken);
 
         _logger.LogDebug("Retrieved {Count} results.", results.Count);
         return results;

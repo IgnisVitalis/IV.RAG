@@ -1,5 +1,6 @@
 using FluentAssertions;
 using IV.RAG.IntegrationTests.Fixtures;
+using IV.RAG.IntegrationTests.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace IV.RAG.IntegrationTests;
@@ -23,33 +24,36 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
 
     public PostgresRetrieverTests(PostgresContainerFixture fixture) => _fixture = fixture;
 
-    private async Task<(PostgresVectorStore Store, PostgresRetriever Retriever)> CreateAndSeedAsync(string tableName)
-    {
-        var options = Options.Create(new PostgresOptions
+    private IOptions<PostgresOptions> TableOptions(string tableName) =>
+        Options.Create(new PostgresOptions
         {
             ConnectionString = _fixture.ConnectionString,
             TableName = tableName,
             VectorDimension = 3
         });
-        var store = new PostgresVectorStore(_fixture.DataSource, options);
-        var retriever = new PostgresRetriever(_fixture.DataSource, options);
 
+    private PostgresRetriever CreateRetriever(string tableName, float[] queryVector) =>
+        new(_fixture.DataSource, new FakeEmbedder(_ => queryVector), TableOptions(tableName));
+
+    private async Task SeedAsync(string tableName)
+    {
+        var store = new PostgresVectorStore(_fixture.DataSource, TableOptions(tableName));
         await store.SetAsync(TestOrigin,
         [
             new Chunk { Id = "cats", Text = "cats are animals", Embedding = VectorCats, Origin = TestOrigin },
             new Chunk { Id = "dogs", Text = "dogs are animals", Embedding = VectorDogs, Origin = TestOrigin },
             new Chunk { Id = "cars", Text = "cars are vehicles", Embedding = VectorCars, Origin = TestOrigin }
         ]);
-
-        return (store, retriever);
     }
 
     [Fact]
     public async Task RetrieveAsync_ReturnsSimilarChunksInDescendingOrder()
     {
-        var (_, retriever) = await CreateAndSeedAsync(PostgresContainerFixture.NewTable());
+        var table = PostgresContainerFixture.NewTable();
+        await SeedAsync(table);
+        var retriever = CreateRetriever(table, VectorCats);
 
-        var results = await retriever.RetrieveAsync(VectorCats, new RetrievalOptions { TopK = 3, MinScore = -1f });
+        var results = await retriever.RetrieveAsync("query", new RetrievalOptions { TopK = 3, MinScore = -1f });
 
         results.Should().HaveCount(3);
         results[0].Chunk.Id.Should().Be("cats");
@@ -62,9 +66,11 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_RespectsTopK()
     {
-        var (_, retriever) = await CreateAndSeedAsync(PostgresContainerFixture.NewTable());
+        var table = PostgresContainerFixture.NewTable();
+        await SeedAsync(table);
+        var retriever = CreateRetriever(table, VectorCats);
 
-        var results = await retriever.RetrieveAsync(VectorCats, new RetrievalOptions { TopK = 2, MinScore = -1f });
+        var results = await retriever.RetrieveAsync("query", new RetrievalOptions { TopK = 2, MinScore = -1f });
 
         results.Should().HaveCount(2);
         results[0].Chunk.Id.Should().Be("cats");
@@ -74,10 +80,11 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_FiltersChunksBelowMinScore()
     {
-        var (_, retriever) = await CreateAndSeedAsync(PostgresContainerFixture.NewTable());
+        var table = PostgresContainerFixture.NewTable();
+        await SeedAsync(table);
+        var retriever = CreateRetriever(table, VectorCats);
 
-        // MinScore = 0.5 should exclude "cars" (score ≈ 0) and "dogs" (score ≈ 0.9 passes)
-        var results = await retriever.RetrieveAsync(VectorCats, new RetrievalOptions { TopK = 10, MinScore = 0.5f });
+        var results = await retriever.RetrieveAsync("query", new RetrievalOptions { TopK = 10, MinScore = 0.5f });
 
         results.Should().HaveCount(2);
         results.Should().NotContain(r => r.Chunk.Id == "cars");
@@ -86,10 +93,11 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_DefaultMinScore_ExcludesOrthogonalChunks()
     {
-        var (_, retriever) = await CreateAndSeedAsync(PostgresContainerFixture.NewTable());
+        var table = PostgresContainerFixture.NewTable();
+        await SeedAsync(table);
+        var retriever = CreateRetriever(table, VectorCats);
 
-        // MinScore = 0.0 uses >, so "cars" (score exactly 0.0) is excluded
-        var results = await retriever.RetrieveAsync(VectorCats, new RetrievalOptions { TopK = 10 });
+        var results = await retriever.RetrieveAsync("query", new RetrievalOptions { TopK = 10 });
 
         results.Should().NotContain(r => r.Chunk.Id == "cars");
         results.Should().OnlyContain(r => r.Score > 0.0f);
@@ -98,9 +106,11 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_ScoreIsWithinValidRange()
     {
-        var (_, retriever) = await CreateAndSeedAsync(PostgresContainerFixture.NewTable());
+        var table = PostgresContainerFixture.NewTable();
+        await SeedAsync(table);
+        var retriever = CreateRetriever(table, VectorCats);
 
-        var results = await retriever.RetrieveAsync(VectorCats, new RetrievalOptions { TopK = 10, MinScore = -1f });
+        var results = await retriever.RetrieveAsync("query", new RetrievalOptions { TopK = 10, MinScore = -1f });
 
         results.Should().OnlyContain(r => r.Score >= -1f && r.Score <= 1f);
     }
@@ -108,17 +118,12 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_EmptyStore_ReturnsEmpty()
     {
-        var options = Options.Create(new PostgresOptions
-        {
-            ConnectionString = _fixture.ConnectionString,
-            TableName = PostgresContainerFixture.NewTable(),
-            VectorDimension = 3
-        });
-        var store = new PostgresVectorStore(_fixture.DataSource, options);
-        var retriever = new PostgresRetriever(_fixture.DataSource, options);
+        var table = PostgresContainerFixture.NewTable();
+        var store = new PostgresVectorStore(_fixture.DataSource, TableOptions(table));
         await store.SetAsync(TestOrigin, []); // trigger schema creation
+        var retriever = CreateRetriever(table, VectorCats);
 
-        var results = await retriever.RetrieveAsync(VectorCats, new RetrievalOptions { TopK = 10 });
+        var results = await retriever.RetrieveAsync("query", new RetrievalOptions { TopK = 10 });
 
         results.Should().BeEmpty();
     }
@@ -128,17 +133,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     //       dogs → {department=animals, year=2021}
     //       cars → {department=vehicles, year=2019}
 
-    private async Task<PostgresRetriever> CreateAndSeedWithMetadataAsync(string tableName)
+    private async Task<PostgresRetriever> SeedWithMetadataAsync(string tableName)
     {
-        var options = Options.Create(new PostgresOptions
-        {
-            ConnectionString = _fixture.ConnectionString,
-            TableName = tableName,
-            VectorDimension = 3
-        });
-        var store = new PostgresRetriever(_fixture.DataSource, options);
-
-        await new PostgresVectorStore(_fixture.DataSource, options).SetAsync(TestOrigin,
+        await new PostgresVectorStore(_fixture.DataSource, TableOptions(tableName)).SetAsync(TestOrigin,
         [
             new Chunk
             {
@@ -157,15 +154,15 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
             }
         ]);
 
-        return store;
+        return CreateRetriever(tableName, VectorCats);
     }
 
     [Fact]
     public async Task RetrieveAsync_EqFilter_ReturnsOnlyMatchingChunks()
     {
-        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+        var retriever = await SeedWithMetadataAsync(PostgresContainerFixture.NewTable());
 
-        var results = await retriever.RetrieveAsync(VectorCats,
+        var results = await retriever.RetrieveAsync("query",
             new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.Eq("department", "animals") });
 
         results.Should().HaveCount(2);
@@ -175,9 +172,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_GtFilter_ReturnsChunksAboveThreshold()
     {
-        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+        var retriever = await SeedWithMetadataAsync(PostgresContainerFixture.NewTable());
 
-        var results = await retriever.RetrieveAsync(VectorCats,
+        var results = await retriever.RetrieveAsync("query",
             new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.Gt("year", 2020) });
 
         results.Should().ContainSingle(r => r.Chunk.Id == "dogs");
@@ -186,9 +183,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_GteFilter_ReturnsChunksAtAndAboveThreshold()
     {
-        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+        var retriever = await SeedWithMetadataAsync(PostgresContainerFixture.NewTable());
 
-        var results = await retriever.RetrieveAsync(VectorCats,
+        var results = await retriever.RetrieveAsync("query",
             new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.Gte("year", 2020) });
 
         results.Should().HaveCount(2);
@@ -198,9 +195,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_InFilter_ReturnsOnlyMembersOfSet()
     {
-        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+        var retriever = await SeedWithMetadataAsync(PostgresContainerFixture.NewTable());
 
-        var results = await retriever.RetrieveAsync(VectorCats,
+        var results = await retriever.RetrieveAsync("query",
             new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.In("department", "animals", "vehicles") });
 
         results.Should().HaveCount(3);
@@ -209,9 +206,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_AndFilter_CombinesTwoConditions()
     {
-        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+        var retriever = await SeedWithMetadataAsync(PostgresContainerFixture.NewTable());
 
-        var results = await retriever.RetrieveAsync(VectorCats,
+        var results = await retriever.RetrieveAsync("query",
             new RetrievalOptions
             {
                 TopK = 10, MinScore = -1f,
@@ -226,9 +223,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_OrFilter_ReturnsUnionOfMatches()
     {
-        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+        var retriever = await SeedWithMetadataAsync(PostgresContainerFixture.NewTable());
 
-        var results = await retriever.RetrieveAsync(VectorCats,
+        var results = await retriever.RetrieveAsync("query",
             new RetrievalOptions
             {
                 TopK = 10, MinScore = -1f,
@@ -244,9 +241,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_NotFilter_ExcludesMatchingChunks()
     {
-        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+        var retriever = await SeedWithMetadataAsync(PostgresContainerFixture.NewTable());
 
-        var results = await retriever.RetrieveAsync(VectorCats,
+        var results = await retriever.RetrieveAsync("query",
             new RetrievalOptions { TopK = 10, MinScore = -1f, MetadataFilter = MetadataFilter.Not(MetadataFilter.Eq("department", "animals")) });
 
         results.Should().ContainSingle(r => r.Chunk.Id == "cars");
@@ -255,9 +252,9 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     [Fact]
     public async Task RetrieveAsync_MetadataFilter_RoundTripsMetadataValues()
     {
-        var retriever = await CreateAndSeedWithMetadataAsync(PostgresContainerFixture.NewTable());
+        var retriever = await SeedWithMetadataAsync(PostgresContainerFixture.NewTable());
 
-        var results = await retriever.RetrieveAsync(VectorCats,
+        var results = await retriever.RetrieveAsync("query",
             new RetrievalOptions { TopK = 1, MinScore = -1f, MetadataFilter = MetadataFilter.Eq("department", "animals") });
 
         var metadata = results[0].Chunk.Metadata!;

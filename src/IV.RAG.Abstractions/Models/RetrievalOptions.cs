@@ -1,7 +1,7 @@
 namespace IV.RAG;
 
 /// <summary>Controls how results are filtered and ranked during retrieval.</summary>
-public sealed class RetrievalOptions
+public sealed record RetrievalOptions
 {
     /// <summary>Maximum number of chunks to return.</summary>
     public int TopK { get; init; } = 5;

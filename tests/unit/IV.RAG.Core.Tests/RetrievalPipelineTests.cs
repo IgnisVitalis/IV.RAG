@@ -110,17 +110,15 @@ public class RetrievalPipelineTests
     }
 
     [Fact]
-    public async Task QueryAsync_EmbedsQuery_ThenCallsRetriever()
+    public async Task QueryAsync_PassesQueryStringToRetriever()
     {
-        var embedding = new float[] { 0.1f, 0.2f };
-        _embedder.EmbedAsync("question", Arg.Any<CancellationToken>()).Returns(embedding);
-        _retriever.RetrieveAsync(Arg.Any<float[]>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+        _retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<SearchResult>());
 
         await _pipeline.QueryAsync("question");
 
         await _retriever.Received(1).RetrieveAsync(
-            embedding,
+            "question",
             Arg.Any<RetrievalOptions>(),
             Arg.Any<CancellationToken>());
     }
@@ -128,14 +126,13 @@ public class RetrievalPipelineTests
     [Fact]
     public async Task QueryAsync_NullOptions_PassesDefaultOptions()
     {
-        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
-        _retriever.RetrieveAsync(Arg.Any<float[]>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+        _retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<SearchResult>());
 
         await _pipeline.QueryAsync("question", null);
 
         await _retriever.Received(1).RetrieveAsync(
-            Arg.Any<float[]>(),
+            Arg.Any<string>(),
             Arg.Is<RetrievalOptions>(o => o.TopK == 5 && o.MinScore == 0.0f),
             Arg.Any<CancellationToken>());
     }
@@ -145,13 +142,54 @@ public class RetrievalPipelineTests
     {
         var origin = new TestDocument("result").Source;
         var expected = new[] { new SearchResult(new Chunk { Text = "result", Origin = origin }, 0.9f) };
-        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
-        _retriever.RetrieveAsync(Arg.Any<float[]>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+        _retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
             .Returns(expected);
 
         var results = await _pipeline.QueryAsync("question");
 
         results.Should().BeEquivalentTo(expected);
+    }
+
+    [Fact]
+    public async Task QueryAsync_DoesNotCallEmbedder()
+    {
+        _retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<SearchResult>());
+
+        await _pipeline.QueryAsync("question");
+
+        await _embedder.DidNotReceive().EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // ─── cache invalidation ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task IngestAsync_WithQueryCache_CallsInvalidateByDocument()
+    {
+        var cache = Substitute.For<IQueryCache>();
+        var pipeline = new RetrievalPipeline(
+            _chunker, _embedder, _vectorStore, _retriever,
+            NullLogger<RetrievalPipeline>.Instance, cache);
+
+        var doc = new TestDocument("text");
+        _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
+        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+
+        await pipeline.IngestAsync(doc);
+
+        await cache.Received(1).InvalidateByDocumentAsync(doc.Source, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task IngestAsync_WithoutQueryCache_DoesNotThrow()
+    {
+        var doc = new TestDocument("text");
+        _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
+        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+
+        var act = () => _pipeline.IngestAsync(doc);
+
+        await act.Should().NotThrowAsync();
     }
 
 #pragma warning disable CS1998
