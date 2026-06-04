@@ -59,8 +59,11 @@ public sealed class HybridRetrievalPipeline : IRetrievalPipeline, IVectorQueryPi
     {
         var opts = options ?? new RetrievalOptions();
         var candidateOptions = CandidateOptions(opts);
-        var vectorTask = _vectorRetriever.RetrieveAsync(query, candidateOptions, cancellationToken);
-        return FuseAndRerankAsync(query, opts, candidateOptions, vectorTask, cancellationToken);
+        return RagDiagnostics.MeasureRetrievalAsync(() =>
+        {
+            var vectorTask = _vectorRetriever.RetrieveAsync(query, candidateOptions, cancellationToken);
+            return FuseAndRerankAsync(query, opts, candidateOptions, vectorTask, cancellationToken);
+        });
     }
 
     /// <inheritdoc/>
@@ -71,12 +74,15 @@ public sealed class HybridRetrievalPipeline : IRetrievalPipeline, IVectorQueryPi
         CancellationToken cancellationToken = default)
     {
         var candidateOptions = CandidateOptions(options);
-        // Reuse the precomputed embedding for the vector arm; the lexical arm and reranker still
-        // use the query string. Fall back to the string overload if the retriever lacks the seam.
-        var vectorTask = _vectorRetriever is IVectorRetriever vectorRetriever
-            ? vectorRetriever.RetrieveByVectorAsync(embedding, candidateOptions, cancellationToken)
-            : _vectorRetriever.RetrieveAsync(query, candidateOptions, cancellationToken);
-        return FuseAndRerankAsync(query, options, candidateOptions, vectorTask, cancellationToken);
+        return RagDiagnostics.MeasureRetrievalAsync(() =>
+        {
+            // Reuse the precomputed embedding for the vector arm; the lexical arm and reranker still
+            // use the query string. Fall back to the string overload if the retriever lacks the seam.
+            var vectorTask = _vectorRetriever is IVectorRetriever vectorRetriever
+                ? vectorRetriever.RetrieveByVectorAsync(embedding, candidateOptions, cancellationToken)
+                : _vectorRetriever.RetrieveAsync(query, candidateOptions, cancellationToken);
+            return FuseAndRerankAsync(query, options, candidateOptions, vectorTask, cancellationToken);
+        });
     }
 
     private RetrievalOptions CandidateOptions(RetrievalOptions opts) => new()

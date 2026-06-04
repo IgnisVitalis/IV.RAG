@@ -10,14 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 3 — Service ergonomics
 
-- [ ] **Observability: tracing, metrics, health checks**
-  Good `ILogger` usage exists, but no `ActivitySource`/metrics and no `IHealthCheck` for
-  Postgres/Ollama reachability.
-  - Add an `ActivitySource` with spans around ingest / embed / retrieve / generate, and
-    counters/histograms (chunks ingested, retrieval latency, cache hit ratio, embed calls).
-  - Add `IHealthCheck` implementations for the Postgres data source and the Ollama endpoint,
-    with `Add*HealthCheck()` extensions.
-
 - [ ] **Structured answer with citations**
   `AnswerAsync` returns a bare string; end apps routinely need source attribution.
   - Add an `AnswerResult { string Text; IReadOnlyList<SearchResult> Sources }` and an

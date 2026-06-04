@@ -119,4 +119,35 @@ public static class ServiceCollectionExtensions
         ));
         return builder;
     }
+
+    /// <summary>
+    /// Enables provider-call instrumentation: decorates the registered <see cref="IEmbedder"/> and
+    /// <see cref="IGenerator"/> so every embed and generate call emits a span and (for embeds) the
+    /// <c>rag.embed_calls</c> counter. Pipeline spans and metrics (ingest, retrieve, cache) are always
+    /// emitted via <see cref="RagDiagnostics"/> — this opt-in only adds the cross-provider embed/generate
+    /// instrumentation. Call after the provider registrations.
+    /// </summary>
+    public static RAGBuilder AddRagObservability(this RAGBuilder builder)
+    {
+        Decorate<IEmbedder>(builder.Services, inner => new InstrumentedEmbedder(inner));
+        Decorate<IGenerator>(builder.Services, inner => new InstrumentedGenerator(inner));
+        return builder;
+    }
+
+    // Replaces the most recent registration of TService with a decorator wrapping the original.
+    private static void Decorate<TService>(IServiceCollection services, Func<TService, TService> decorate)
+        where TService : class
+    {
+        var descriptor = services.LastOrDefault(d => d.ServiceType == typeof(TService));
+        if (descriptor is null) return; // nothing registered to decorate (e.g. no generator on a server)
+
+        services.Remove(descriptor);
+        services.AddSingleton(sp =>
+        {
+            var inner = (TService)(descriptor.ImplementationInstance
+                ?? descriptor.ImplementationFactory?.Invoke(sp)
+                ?? ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!));
+            return decorate(inner);
+        });
+    }
 }

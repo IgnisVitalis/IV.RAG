@@ -138,6 +138,40 @@ they use **separate clients** with separate timeouts:
 Generation requests are **not retried on timeout** (re-running a slow generation only wastes work);
 embedding and remote requests retry on transient failures within their timeout budget.
 
+### Observability
+
+The pipelines emit OpenTelemetry-compatible traces and metrics through `RagDiagnostics`, an
+`ActivitySource` and `Meter` both named **`IV.RAG`**. Spans cover ingest, retrieve, and answer; metrics
+include chunks ingested, retrieval latency, and cache hits/misses. Subscribe in your OTel setup:
+
+```csharp
+services.AddOpenTelemetry()
+    .WithTracing(t => t.AddSource("IV.RAG"))
+    .WithMetrics(m => m.AddMeter("IV.RAG"));
+```
+
+To also span and count **embed** and **generate** calls (which cross into the provider packages), opt
+in with `AddRagObservability()` after the provider registrations — it decorates `IEmbedder`/`IGenerator`:
+
+```csharp
+services.AddRagToolkit()
+    .AddOllamaEmbedder(...).AddOllamaGenerator(...).AddPostgresVectorStore(...)
+    .AddRagObservability(); // adds rag.embed / rag.generate spans + the rag.embed_calls counter
+```
+
+**Health checks** for provider reachability register through the standard ASP.NET Core health-check
+system:
+
+```csharp
+services.AddRagToolkit()
+    .AddPostgresVectorStore(o => o.ConnectionString = "...")
+    .AddPostgresHealthCheck()   // pings the data source with SELECT 1
+    .AddOllamaEmbedder(...)
+    .AddOllamaHealthCheck();     // pings the Ollama endpoint (dedicated short-timeout client)
+
+// app.MapHealthChecks("/health");
+```
+
 ### Server — retrieval only
 
 Exposes a retrieval endpoint; does not generate answers.

@@ -27,6 +27,7 @@ public sealed class AnswerPipeline : IAnswerPipeline
         RetrievalOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        using var activity = RagDiagnostics.ActivitySource.StartActivity("rag.answer");
         _logger.LogDebug("Answering: \"{Query}\".", query);
 
         var chunks = await _retrieval.QueryAsync(query, options, cancellationToken);
@@ -42,6 +43,8 @@ public sealed class AnswerPipeline : IAnswerPipeline
         RetrievalOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        using var activity = RagDiagnostics.ActivitySource.StartActivity("rag.answer");
+        activity?.SetTag("rag.streaming", true);
         _logger.LogDebug("Answering (streaming): \"{Query}\".", query);
 
         var chunks = await _retrieval.QueryAsync(query, options, cancellationToken);

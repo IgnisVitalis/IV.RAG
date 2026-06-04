@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-06-03
+
+### Added
+
+- **Tracing & metrics** — `RagDiagnostics` (`Core`) exposes a public `ActivitySource` and `Meter`, both named `IV.RAG`. The pipelines emit spans (`rag.ingest`, `rag.retrieve`, `rag.retrieve.cached`, `rag.answer`) and metrics (`rag.chunks_ingested`, `rag.retrieval.duration`, `rag.cache.hits`, `rag.cache.misses`). Subscribe via OpenTelemetry with `.AddSource("IV.RAG")` and `.AddMeter("IV.RAG")`. Instrumentation is a no-op (no allocations) when nothing is listening.
+- `AddRagObservability()` (`Core`) — opt-in decorators on the registered `IEmbedder`/`IGenerator` that add `rag.embed` / `rag.generate` spans and the `rag.embed_calls` counter, capturing every embed and generate call regardless of provider (including embeds made during retrieval).
+- `PostgresHealthCheck` + `AddPostgresHealthCheck()` (`Postgres`) — verifies the data source is reachable with `SELECT 1`. Adds a `Microsoft.Extensions.Diagnostics.HealthChecks` dependency.
+- `OllamaHealthCheck` + `AddOllamaHealthCheck()` (`Ollama`) — pings the Ollama endpoint via a dedicated short-timeout client (no resilience handler, so the probe fails fast). Adds a `Microsoft.Extensions.Diagnostics.HealthChecks` dependency.
+
 ## [0.19.0] - 2026-06-03
 
 ### Added

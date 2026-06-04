@@ -80,4 +80,14 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IOptions<QueryCacheOptions>>()));
         return builder;
     }
+
+    /// <summary>
+    /// Registers a <see cref="PostgresHealthCheck"/> that verifies the PostgreSQL data source is
+    /// reachable. Requires <see cref="AddPostgresVectorStore"/> to have registered the data source.
+    /// </summary>
+    public static RAGBuilder AddPostgresHealthCheck(this RAGBuilder builder, string name = "postgres")
+    {
+        builder.Services.AddHealthChecks().AddCheck<PostgresHealthCheck>(name);
+        return builder;
+    }
 }

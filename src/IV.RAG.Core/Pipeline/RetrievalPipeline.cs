@@ -36,6 +36,9 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline, 
     {
         _logger.LogDebug("Ingesting document of type {DocumentType}.", document.GetType().Name);
 
+        using var activity = RagDiagnostics.ActivitySource.StartActivity("rag.ingest");
+        activity?.SetTag("rag.document_type", document.GetType().Name);
+
         var rawChunks = new List<Chunk>();
         await foreach (var chunk in _chunker.ChunkAsync(document, cancellationToken))
             rawChunks.Add(chunk);
@@ -47,6 +50,8 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline, 
             chunks.Add(rawChunks[i] with { Id = Guid.NewGuid().ToString(), ChunkIndex = i, Embedding = embeddings[i] });
 
         await _vectorStore.SetAsync(document.Source, chunks, cancellationToken);
+        RagDiagnostics.ChunksIngested.Add(chunks.Count);
+        activity?.SetTag("rag.chunk_count", chunks.Count);
         _logger.LogDebug("Ingested {Count} chunks.", chunks.Count);
 
         if (_queryCache is not null)
@@ -61,7 +66,8 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline, 
     {
         _logger.LogDebug("Querying: \"{Query}\".", query);
 
-        var results = await _retriever.RetrieveAsync(query, options ?? new RetrievalOptions(), cancellationToken);
+        var results = await RagDiagnostics.MeasureRetrievalAsync(
+            () => _retriever.RetrieveAsync(query, options ?? new RetrievalOptions(), cancellationToken));
 
         _logger.LogDebug("Retrieved {Count} results.", results.Count);
         return results;
@@ -78,9 +84,9 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline, 
 
         // Reuse the caller's embedding when the retriever supports it; otherwise fall back to the
         // string overload (which embeds internally).
-        var results = _retriever is IVectorRetriever vectorRetriever
-            ? await vectorRetriever.RetrieveByVectorAsync(embedding, options, cancellationToken)
-            : await _retriever.RetrieveAsync(query, options, cancellationToken);
+        var results = await RagDiagnostics.MeasureRetrievalAsync(() => _retriever is IVectorRetriever vectorRetriever
+            ? vectorRetriever.RetrieveByVectorAsync(embedding, options, cancellationToken)
+            : _retriever.RetrieveAsync(query, options, cancellationToken));
 
         _logger.LogDebug("Retrieved {Count} results.", results.Count);
         return results;

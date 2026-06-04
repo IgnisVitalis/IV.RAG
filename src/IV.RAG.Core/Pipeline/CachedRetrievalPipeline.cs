@@ -34,16 +34,21 @@ public sealed class CachedRetrievalPipeline : IRetrievalPipeline
         RetrievalOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        using var activity = RagDiagnostics.ActivitySource.StartActivity("rag.retrieve.cached");
         var opts = options ?? new RetrievalOptions();
         var embedding = await _embedder.EmbedAsync(query, cancellationToken);
 
         var cached = await _cache.GetAsync(embedding, opts, cancellationToken);
         if (cached is not null)
         {
+            RagDiagnostics.CacheHits.Add(1);
+            activity?.SetTag("rag.cache_hit", true);
             _logger?.LogDebug("Cache hit for query \"{Query}\".", query);
             return cached;
         }
 
+        RagDiagnostics.CacheMisses.Add(1);
+        activity?.SetTag("rag.cache_hit", false);
         _logger?.LogDebug("Cache miss for query \"{Query}\".", query);
 
         // Reuse the embedding we already computed for the cache probe when the inner pipeline

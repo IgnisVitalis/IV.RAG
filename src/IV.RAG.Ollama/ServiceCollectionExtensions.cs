@@ -11,6 +11,7 @@ public static class ServiceCollectionExtensions
     // (generation is far slower than embedding).
     internal const string EmbedderClientName = "IV.RAG.Ollama.Embedder";
     internal const string GeneratorClientName = "IV.RAG.Ollama.Generator";
+    internal const string HealthClientName = "IV.RAG.Ollama.Health";
 
     /// <summary>
     /// Registers <see cref="OllamaEmbedder"/> as the <see cref="IEmbedder"/> implementation.
@@ -72,6 +73,23 @@ public static class ServiceCollectionExtensions
             });
 
         builder.Services.AddSingleton<IGenerator, OllamaGenerator>();
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers an <see cref="OllamaHealthCheck"/> that verifies the Ollama endpoint is reachable.
+    /// Uses a dedicated short-timeout HTTP client (no resilience handler) so the probe fails fast.
+    /// </summary>
+    public static RAGBuilder AddOllamaHealthCheck(this RAGBuilder builder, string name = "ollama")
+    {
+        builder.Services.AddHttpClient(HealthClientName)
+            .ConfigureHttpClient((sp, client) =>
+            {
+                var options = sp.GetRequiredService<IOptions<OllamaOptions>>().Value;
+                client.BaseAddress = new Uri(options.Endpoint);
+                client.Timeout = TimeSpan.FromSeconds(5);
+            });
+        builder.Services.AddHealthChecks().AddCheck<OllamaHealthCheck>(name);
         return builder;
     }
 
