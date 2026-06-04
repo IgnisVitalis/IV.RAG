@@ -32,7 +32,7 @@ public sealed class PostgresQueryCache : IQueryCache, IDisposable
     {
         _dataSource = dataSource;
         _embedder = embedder;
-        _tableName = postgresOptions.Value.QueryCacheTableName;
+        _tableName = SqlIdentifier.Validate(postgresOptions.Value.QueryCacheTableName, nameof(PostgresOptions.QueryCacheTableName));
         _schemaManagement = postgresOptions.Value.SchemaManagement;
         _cacheOptions = cacheOptions.Value;
     }

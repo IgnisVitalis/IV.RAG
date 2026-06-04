@@ -31,6 +31,7 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
         _embedder = embedder;
         _options = options.Value;
         _logger = logger;
+        SqlIdentifier.Validate(_options.TableName, nameof(PostgresOptions.TableName));
     }
 
     /// <inheritdoc/>

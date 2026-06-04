@@ -10,15 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 2 — Throughput & robustness
 
-- [ ] **Validate table / identifier names**
-  `TextSearchLanguage` and metadata field names are validated, but `TableName` and
-  `QueryCacheTableName` are interpolated into SQL unvalidated (e.g. `PostgresVectorStore.cs:60`,
-  `PostgresQueryCache.cs:144`). Consistency gap and latent injection vector if a table name is
-  ever sourced from config/user input.
-  - Validate both against `^[a-zA-Z_][a-zA-Z0-9_]*$` (optionally allow a single
-    `schema.table` qualification), once at first use / options binding. Reuse the existing
-    `SafeLanguage`-style regex helper.
-
 - [ ] **Startup configuration validation**
   Chunkers `ValidateOnStart`, but `PostgresOptions.ConnectionString` (empty default) and
   `OllamaOptions.Endpoint` are unvalidated until first use, so failures surface late and

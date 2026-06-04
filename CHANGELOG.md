@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-03
+
+### Changed
+
+- `PostgresOptions.TableName` and `PostgresOptions.QueryCacheTableName` are now validated as SQL identifiers — letters, digits, and underscores (not starting with a digit), optionally qualified as `schema.table` — when any Postgres component is constructed. Table names are interpolated into SQL (they cannot be parameterized), so this closes a latent injection vector and matches the existing validation of `TextSearchLanguage` and metadata field names. An invalid name throws `ArgumentException` at construction.
+
 ## [0.15.0] - 2026-06-03
 
 ### Added

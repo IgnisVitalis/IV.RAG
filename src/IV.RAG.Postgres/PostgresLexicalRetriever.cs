@@ -25,6 +25,7 @@ public sealed class PostgresLexicalRetriever : ILexicalRetriever
     {
         _dataSource = dataSource;
         _options = options.Value;
+        SqlIdentifier.Validate(_options.TableName, nameof(PostgresOptions.TableName));
     }
 
     /// <inheritdoc/>

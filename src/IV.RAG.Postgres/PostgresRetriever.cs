@@ -17,7 +17,7 @@ public sealed class PostgresRetriever : IRetriever, IVectorRetriever
     {
         _dataSource = dataSource;
         _embedder = embedder;
-        _tableName = options.Value.TableName;
+        _tableName = SqlIdentifier.Validate(options.Value.TableName, nameof(PostgresOptions.TableName));
     }
 
     /// <inheritdoc/>
