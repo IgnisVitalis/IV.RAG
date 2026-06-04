@@ -385,6 +385,12 @@ foreach (var result in results)
 var answer = await pipeline.AnswerAsync("your question");
 Console.WriteLine(answer);
 
+// Answer with citations — text plus the source chunks it was grounded in
+var result = await pipeline.AnswerWithSourcesAsync("your question");
+Console.WriteLine(result.Text);
+foreach (var source in result.Sources)
+    Console.WriteLine($"  ↳ [{source.Score:F2}] {source.Chunk.Origin.DocumentId}");
+
 // Answer — streamed token-by-token (for chat UIs)
 await foreach (var fragment in pipeline.AnswerStreamAsync("your question"))
     Console.Write(fragment);

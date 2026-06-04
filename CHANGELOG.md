@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-06-03
+
+### Added
+
+- `AnswerResult` (`Abstractions`) — `record AnswerResult(string Text, IReadOnlyList<SearchResult> Sources)`: a generated answer together with the chunks it was grounded in, for source attribution / citations.
+- `IAnswerPipeline.AnswerWithSourcesAsync(query, options, ct)` — returns an `AnswerResult`. Added as a default interface method that returns the `AnswerAsync` text with an empty source list (so existing implementations keep working); `AnswerPipeline` and `RagPipeline` override it to populate the retrieved sources. The plain `AnswerAsync` string path is unchanged and now delegates to it (removing the duplicated retrieve→generate loop between the two pipelines).
+
 ## [0.20.0] - 2026-06-03
 
 ### Added

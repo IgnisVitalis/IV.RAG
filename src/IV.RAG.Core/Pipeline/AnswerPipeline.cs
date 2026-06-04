@@ -25,6 +25,13 @@ public sealed class AnswerPipeline : IAnswerPipeline
     public async Task<string> AnswerAsync(
         string query,
         RetrievalOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        (await AnswerWithSourcesAsync(query, options, cancellationToken)).Text;
+
+    /// <inheritdoc/>
+    public async Task<AnswerResult> AnswerWithSourcesAsync(
+        string query,
+        RetrievalOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         using var activity = RagDiagnostics.ActivitySource.StartActivity("rag.answer");
@@ -34,7 +41,7 @@ public sealed class AnswerPipeline : IAnswerPipeline
         var answer = await _generator.GenerateAsync(query, chunks, cancellationToken);
 
         _logger.LogDebug("Generated answer ({Length} chars).", answer.Length);
-        return answer;
+        return new AnswerResult(answer, chunks);
     }
 
     /// <inheritdoc/>

@@ -10,12 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 3 — Service ergonomics
 
-- [ ] **Structured answer with citations**
-  `AnswerAsync` returns a bare string; end apps routinely need source attribution.
-  - Add an `AnswerResult { string Text; IReadOnlyList<SearchResult> Sources }` and an
-    overload/variant on `IAnswerPipeline` that returns it, leaving the simple string path
-    intact.
-
 - [ ] **Generator context-window budget**
   `OllamaGenerator.BuildContext` concatenates all retrieved chunks unbounded
   (`OllamaGenerator.cs:44`); large `TopK` × large chunks can overflow the model context.
