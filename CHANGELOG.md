@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-03
+
+### Changed
+
+- `PostgresVectorStore.SetAsync` now bulk-inserts chunks with a single binary `COPY` (`NpgsqlBinaryImporter`) inside the existing delete-then-insert transaction, replacing the previous one-`INSERT`-per-chunk loop — large documents ingest in a single round-trip instead of N. Up-front validation (origin match, non-null Id/Embedding) is unchanged, and an empty chunk set still just clears the document's existing rows. No public API change.
+
 ## [0.13.0] - 2026-06-03
 
 ### Added

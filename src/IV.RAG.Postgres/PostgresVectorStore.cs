@@ -72,26 +72,40 @@ public sealed class PostgresVectorStore : IVectorStore, IDisposable
             await deleteCmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        foreach (var chunk in chunkList)
+        if (chunkList.Count > 0)
         {
-            await using var cmd = conn.CreateCommand();
-            cmd.Transaction = tx;
-            cmd.CommandText = $"""
-                INSERT INTO {_options.TableName} (id, text, embedding, metadata, source_id, document_type, document_id, chunk_index, model_id)
-                VALUES (@id, @text, @embedding, @metadata::jsonb, @sourceId, @documentType, @documentId, @chunkIndex, @modelId)
-                """;
-            cmd.Parameters.AddWithValue("id", chunk.Id!);
-            cmd.Parameters.AddWithValue("text", chunk.Text);
-            cmd.Parameters.AddWithValue("embedding", new Vector(chunk.Embedding!));
-            cmd.Parameters.AddWithValue("metadata", NpgsqlDbType.Jsonb,
-                chunk.Metadata is not null ? (object)JsonSerializer.Serialize(chunk.Metadata) : DBNull.Value);
-            cmd.Parameters.Add(new NpgsqlParameter("sourceId", NpgsqlDbType.Uuid) { Value = chunk.Origin.SourceId });
-            cmd.Parameters.AddWithValue("documentType", chunk.Origin.DocumentType);
-            cmd.Parameters.AddWithValue("documentId", chunk.Origin.DocumentId);
-            cmd.Parameters.AddWithValue("chunkIndex", NpgsqlDbType.Integer,
-                chunk.ChunkIndex.HasValue ? (object)chunk.ChunkIndex.Value : DBNull.Value);
-            cmd.Parameters.AddWithValue("modelId", NpgsqlDbType.Integer, _currentModelId);
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            // Binary COPY runs in the active transaction. The column list omits text_search
+            // (GENERATED ALWAYS); per-row WriteAsync calls must match this column order exactly.
+            await using var writer = await conn.BeginBinaryImportAsync($"""
+                COPY {_options.TableName} (id, text, embedding, metadata, source_id, document_type, document_id, chunk_index, model_id)
+                FROM STDIN (FORMAT BINARY)
+                """, cancellationToken);
+
+            foreach (var chunk in chunkList)
+            {
+                await writer.StartRowAsync(cancellationToken);
+                await writer.WriteAsync(chunk.Id!, NpgsqlDbType.Text, cancellationToken);
+                await writer.WriteAsync(chunk.Text, NpgsqlDbType.Text, cancellationToken);
+                await writer.WriteAsync(new Vector(chunk.Embedding!), cancellationToken);
+
+                if (chunk.Metadata is not null)
+                    await writer.WriteAsync(JsonSerializer.Serialize(chunk.Metadata), NpgsqlDbType.Jsonb, cancellationToken);
+                else
+                    await writer.WriteNullAsync(cancellationToken);
+
+                await writer.WriteAsync(chunk.Origin.SourceId, NpgsqlDbType.Uuid, cancellationToken);
+                await writer.WriteAsync(chunk.Origin.DocumentType, NpgsqlDbType.Text, cancellationToken);
+                await writer.WriteAsync(chunk.Origin.DocumentId, NpgsqlDbType.Text, cancellationToken);
+
+                if (chunk.ChunkIndex.HasValue)
+                    await writer.WriteAsync(chunk.ChunkIndex.Value, NpgsqlDbType.Integer, cancellationToken);
+                else
+                    await writer.WriteNullAsync(cancellationToken);
+
+                await writer.WriteAsync(_currentModelId, NpgsqlDbType.Integer, cancellationToken);
+            }
+
+            await writer.CompleteAsync(cancellationToken);
         }
 
         await tx.CommitAsync(cancellationToken);

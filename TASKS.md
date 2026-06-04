@@ -10,15 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 2 — Throughput & robustness
 
-- [ ] **Batched / COPY-based inserts in the vector store**
-  `SetAsync` inserts each chunk with a separate `INSERT ... ExecuteNonQueryAsync` inside the
-  loop (`PostgresVectorStore.cs:71-91`).
-  - Replace with Npgsql binary `COPY` (`NpgsqlBinaryImporter`) or multi-row parameterized
-    `INSERT` batching, inside the existing delete-then-insert transaction.
-  - Keep the up-front validation (origin match, non-null Id/Embedding) unchanged.
-  - Add an integration test ingesting a large chunk set to guard correctness of the batched
-    path (counts, origin columns, model_id all populated).
-
 - [ ] **HTTP resilience & timeouts on provider clients**
   `AddOllamaEmbedder` / `AddOllamaGenerator` / `AddRemoteRetrievalPipeline` register a bare
   `AddHttpClient` with only `BaseAddress` (e.g. `Ollama/ServiceCollectionExtensions.cs:21`).

@@ -190,4 +190,51 @@ public sealed class PostgresVectorStoreTests : IClassFixture<PostgresContainerFi
         results.Should().HaveCount(1);
         results[0].Chunk.Id.Should().Be("3");
     }
+
+    [Fact]
+    public async Task SetAsync_LargeBatch_PersistsAllRowsViaCopy_WithOriginMetadataAndModel()
+    {
+        var table = PostgresContainerFixture.NewTable();
+        var (store, retriever) = Create(table);
+        const int count = 1500;
+
+        var chunks = Enumerable.Range(0, count)
+            .Select(i => new Chunk
+            {
+                Id = $"c{i}",
+                Text = $"chunk {i}",
+                Embedding = Embedding,
+                Origin = TestOrigin,
+                ChunkIndex = i,
+                Metadata = i % 2 == 0 ? new Metadata { ["i"] = i } : null // exercise both COPY branches (jsonb / null)
+            })
+            .ToList();
+
+        await store.SetAsync(TestOrigin, chunks);
+
+        async Task<long> CountAsync(string whereClause)
+        {
+            await using var cmd = _fixture.DataSource.CreateCommand();
+            cmd.CommandText = $"SELECT COUNT(*) FROM {table}{whereClause}";
+            return (long)(await cmd.ExecuteScalarAsync())!;
+        }
+
+        (await CountAsync("")).Should().Be(count);
+        (await CountAsync(" WHERE model_id IS NULL")).Should().Be(0);
+        (await CountAsync(" WHERE metadata IS NOT NULL")).Should().Be(count / 2);
+        (await CountAsync($" WHERE source_id = '{TestOrigin.SourceId}' AND document_type = 'Test' AND document_id = 'doc-1'"))
+            .Should().Be(count);
+
+        await using (var distinctCmd = _fixture.DataSource.CreateCommand())
+        {
+            distinctCmd.CommandText = $"SELECT COUNT(DISTINCT id), MAX(chunk_index) FROM {table}";
+            await using var reader = await distinctCmd.ExecuteReaderAsync();
+            await reader.ReadAsync();
+            reader.GetInt64(0).Should().Be(count);  // all ids distinct
+            reader.GetInt32(1).Should().Be(count - 1); // chunk_index preserved
+        }
+
+        var results = await retriever.RetrieveAsync("query", new RetrievalOptions { TopK = 10, MinScore = -1f });
+        results.Should().HaveCount(10);
+    }
 }
