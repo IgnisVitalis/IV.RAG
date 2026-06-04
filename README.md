@@ -615,9 +615,20 @@ var results = await pipeline.QueryAsync(
     {
         TopK = 10,       // maximum results to return
         MinScore = 0.7f, // minimum vector similarity (applied inside IRetriever, before fusion)
-        MetadataFilter = MetadataFilter.Eq("department", "engineering")
+        MetadataFilter = MetadataFilter.Eq("department", "engineering"),
+
+        // Origin scope (access control): when set, only chunks from this scope are retrieved.
+        SourceId = tenantSourceId,   // restrict to one source system / tenant
+        DocumentType = "Invoice",    // and/or one document type
+        DocumentId = "INV-001"       // and/or one document
     });
 ```
+
+`SourceId` / `DocumentType` / `DocumentId` are the toolkit's **access-control primitive**: the
+application resolves the scope the current user is allowed and passes it here; the retrievers enforce
+it as `WHERE` predicates in SQL (vector, lexical, and hybrid), and it travels with the remote query
+contract. Since the scope is part of `RetrievalOptions`, it is also part of the semantic-cache key, so
+scopes never share cached results.
 
 ## Metadata
 

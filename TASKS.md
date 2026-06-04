@@ -13,14 +13,6 @@ indicative of v0.9.0 and may shift as work lands.
 These were the original backlog. For a RAG service serving end applications they are
 correctness/security primitives, not just features, and pair naturally with Tiers 1–2.
 
-- [ ] **Origin-based scoping in retrieval**
-  Extend `RetrievalOptions` with optional `SourceId`, `DocumentType`, and `DocumentId` fields.
-  When set, the retrieval query adds a WHERE clause on the corresponding origin columns
-  (already indexed via `{table}_origin_idx`). Apply in both `PostgresRetriever` and
-  `PostgresLexicalRetriever` (and propagate through `HybridRetrievalPipeline`'s candidate
-  options). This is the toolkit's access-control primitive: the application resolves which
-  scope the current user is allowed and passes it to options — the toolkit enforces it in SQL.
-
 - [ ] **Mandatory retrieval filter (access-control guard)**
   Allow registering a required filter that is always merged into every `RetrievalOptions`,
   regardless of what the caller provides. Prevents accidental data leaks when the application

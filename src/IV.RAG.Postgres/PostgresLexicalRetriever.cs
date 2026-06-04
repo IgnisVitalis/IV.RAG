@@ -45,11 +45,13 @@ public sealed class PostgresLexicalRetriever : ILexicalRetriever
                 cmd.Parameters.Add(p);
         }
 
+        var originClause = OriginScope.BuildClause(options, cmd);
+
         cmd.CommandText = $"""
             SELECT id, text, metadata, ts_rank(text_search, plainto_tsquery(@lang::regconfig, @query)) AS score,
                    source_id, document_type, document_id, chunk_index
             FROM {_options.TableName}
-            WHERE text_search @@ plainto_tsquery(@lang::regconfig, @query){filterClause}
+            WHERE text_search @@ plainto_tsquery(@lang::regconfig, @query){filterClause}{originClause}
             ORDER BY score DESC
             LIMIT @topK
             """;

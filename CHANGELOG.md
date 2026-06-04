@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-06-03
+
+### Added
+
+- **Origin-based scoping (access-control primitive)** — `RetrievalOptions` gains optional `SourceId`, `DocumentType`, and `DocumentId`. When set, `PostgresRetriever` and `PostgresLexicalRetriever` add parameterized `WHERE` predicates on the origin columns (hitting the existing `{table}_origin_idx`), confining retrieval to the scope the application permits for the current user. `HybridRetrievalPipeline` propagates the scope to its candidate fetch (so the fusion input can't leak cross-scope), and the remote `QueryRequest` contract + `RemoteContract` mapping carry it so the scope survives the client→server hop. Because the scope lives on `RetrievalOptions`, it is also part of the semantic-cache key — different scopes cache independently.
+
 ## [0.22.0] - 2026-06-03
 
 ### Added

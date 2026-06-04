@@ -40,7 +40,16 @@ public sealed class RemoteContractTests
     public void QueryRequest_RoundTripsRetrievalOptions()
     {
         var filter = MetadataFilter.Eq("dept", "eng");
-        var options = new RetrievalOptions { TopK = 7, MinScore = 0.3f, MetadataFilter = filter };
+        var sourceId = Guid.NewGuid();
+        var options = new RetrievalOptions
+        {
+            TopK = 7,
+            MinScore = 0.3f,
+            MetadataFilter = filter,
+            SourceId = sourceId,
+            DocumentType = "Invoice",
+            DocumentId = "inv-1"
+        };
 
         var request = RemoteContract.ToQueryRequest("q", options);
         var roundTripped = request.ToRetrievalOptions();
@@ -49,6 +58,9 @@ public sealed class RemoteContractTests
         roundTripped.TopK.Should().Be(7);
         roundTripped.MinScore.Should().Be(0.3f);
         roundTripped.MetadataFilter.Should().BeSameAs(filter);
+        roundTripped.SourceId.Should().Be(sourceId);
+        roundTripped.DocumentType.Should().Be("Invoice");
+        roundTripped.DocumentId.Should().Be("inv-1");
     }
 
     [Fact]

@@ -89,7 +89,10 @@ public sealed class HybridRetrievalPipeline : IRetrievalPipeline, IVectorQueryPi
     {
         TopK = opts.TopK * _options.CandidateMultiplier,
         MinScore = opts.MinScore,
-        MetadataFilter = opts.MetadataFilter
+        MetadataFilter = opts.MetadataFilter,
+        SourceId = opts.SourceId,
+        DocumentType = opts.DocumentType,
+        DocumentId = opts.DocumentId
     };
 
     private async Task<IReadOnlyList<SearchResult>> FuseAndRerankAsync(

@@ -8,11 +8,20 @@ public static class RemoteContract
 {
     /// <summary>Builds a <see cref="QueryRequest"/> from a query string and retrieval options (client side).</summary>
     public static QueryRequest ToQueryRequest(string query, RetrievalOptions options) =>
-        new(query, options.TopK, options.MinScore, options.MetadataFilter);
+        new(query, options.TopK, options.MinScore, options.MetadataFilter,
+            options.SourceId, options.DocumentType, options.DocumentId);
 
     /// <summary>Reconstructs <see cref="RetrievalOptions"/> from a <see cref="QueryRequest"/> (server side).</summary>
     public static RetrievalOptions ToRetrievalOptions(this QueryRequest request) =>
-        new() { TopK = request.TopK, MinScore = request.MinScore, MetadataFilter = request.MetadataFilter };
+        new()
+        {
+            TopK = request.TopK,
+            MinScore = request.MinScore,
+            MetadataFilter = request.MetadataFilter,
+            SourceId = request.SourceId,
+            DocumentType = request.DocumentType,
+            DocumentId = request.DocumentId
+        };
 
     /// <summary>Maps retrieval results to a <see cref="QueryResponse"/> (server side).</summary>
     public static QueryResponse ToQueryResponse(this IReadOnlyList<SearchResult> results) =>

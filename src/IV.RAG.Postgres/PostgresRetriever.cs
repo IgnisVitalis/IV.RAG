@@ -47,13 +47,15 @@ public sealed class PostgresRetriever : IRetriever, IVectorRetriever
                 cmd.Parameters.Add(p);
         }
 
+        var originClause = OriginScope.BuildClause(options, cmd);
+
         // <=> is cosine distance [0, 2]; converting to cosine similarity [-1, 1]
         // Uses > (not >=) so MinScore = 0.0 excludes orthogonal chunks (score exactly 0)
         cmd.CommandText = $"""
             SELECT id, text, metadata, 1 - (embedding <=> @embedding) AS score,
                    source_id, document_type, document_id, chunk_index
             FROM {_tableName}
-            WHERE 1 - (embedding <=> @embedding) > @minScore{filterClause}
+            WHERE 1 - (embedding <=> @embedding) > @minScore{filterClause}{originClause}
             ORDER BY embedding <=> @embedding
             LIMIT @topK
             """;
