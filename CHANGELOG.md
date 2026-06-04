@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-06-03
+
+### Added
+
+- `AddMandatoryRetrievalFilter(Func<IServiceProvider, MetadataFilter?>)` (`Core`) — wraps the retrieval pipeline with an access-control guard (`GuardedRetrievalPipeline`) that AND-merges a required `MetadataFilter`, resolved per query (e.g. from the current tenant), into every query's options regardless of what the caller passes — defending against leaks when the application forgets a tenant/permission filter. Composes with the cached and hybrid pipelines. Call it **last** (after `AddCachedRetrieval()`) so the guard sits outside the cache and the required filter is part of the cache key; otherwise cached results could be served across scopes.
+
 ## [0.23.0] - 2026-06-03
 
 ### Added

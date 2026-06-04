@@ -630,6 +630,25 @@ it as `WHERE` predicates in SQL (vector, lexical, and hybrid), and it travels wi
 contract. Since the scope is part of `RetrievalOptions`, it is also part of the semantic-cache key, so
 scopes never share cached results.
 
+**Mandatory filter (defense in depth).** Passing the scope per query relies on the application not
+forgetting it. `AddMandatoryRetrievalFilter()` registers a guard that always AND-merges a required
+`MetadataFilter` — resolved per query (e.g. from the current tenant) — into every query, regardless of
+what the caller passes:
+
+```csharp
+services.AddRagToolkit()
+    .AddOllamaEmbedder(...).AddOllamaGenerator(...).AddPostgresVectorStore(...)
+    .AddCachedRetrieval()                       // cache first...
+    .AddMandatoryRetrievalFilter(sp =>          // ...then the guard, so it wraps the cache
+    {
+        var tenant = sp.GetRequiredService<IHttpContextAccessor>().HttpContext!.User.FindFirst("tenant")!.Value;
+        return MetadataFilter.Eq("tenant", tenant);
+    });
+```
+
+Call it **last** — after `AddCachedRetrieval()` — so the guard sits outside the cache and the required
+filter is part of the cache key. Otherwise cached results could be served across scopes.
+
 ## Metadata
 
 Attach typed key-value metadata to a document — it is propagated automatically to every chunk produced from it and stored alongside the vector.

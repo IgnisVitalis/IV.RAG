@@ -121,6 +121,37 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Wraps the retrieval pipeline with an access-control guard that AND-merges a required
+    /// <see cref="MetadataFilter"/> — resolved per query from <paramref name="filterFactory"/> (e.g. the
+    /// current tenant) — into every query's options, regardless of what the caller passes.
+    /// </summary>
+    /// <remarks>
+    /// Call this <b>last</b>, after <c>AddCachedRetrieval()</c>, so the guard sits outside the cache and
+    /// the required filter becomes part of the cache key — otherwise cached results could be served
+    /// across scopes. The factory is invoked per query; for per-request scope, read it from an ambient
+    /// accessor (e.g. <c>IHttpContextAccessor</c>) resolved from the provided <see cref="IServiceProvider"/>.
+    /// </remarks>
+    public static RAGBuilder AddMandatoryRetrievalFilter(
+        this RAGBuilder builder,
+        Func<IServiceProvider, MetadataFilter?> filterFactory)
+    {
+        var services = builder.Services;
+        var descriptor = services.LastOrDefault(d => d.ServiceType == typeof(IRetrievalPipeline) && !d.IsKeyedService)
+            ?? throw new InvalidOperationException(
+                "AddMandatoryRetrievalFilter() requires a retrieval pipeline (AddRagToolkit / AddRetrievalPipeline) to be registered first.");
+
+        services.Remove(descriptor);
+        services.AddSingleton<IRetrievalPipeline>(sp =>
+        {
+            var inner = (IRetrievalPipeline)(descriptor.ImplementationInstance
+                ?? descriptor.ImplementationFactory?.Invoke(sp)
+                ?? ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!));
+            return new GuardedRetrievalPipeline(inner, () => filterFactory(sp));
+        });
+        return builder;
+    }
+
+    /// <summary>
     /// Enables provider-call instrumentation: decorates the registered <see cref="IEmbedder"/> and
     /// <see cref="IGenerator"/> so every embed and generate call emits a span and (for embeds) the
     /// <c>rag.embed_calls</c> counter. Pipeline spans and metrics (ingest, retrieve, cache) are always

@@ -13,15 +13,6 @@ indicative of v0.9.0 and may shift as work lands.
 These were the original backlog. For a RAG service serving end applications they are
 correctness/security primitives, not just features, and pair naturally with Tiers 1–2.
 
-- [ ] **Mandatory retrieval filter (access-control guard)**
-  Allow registering a required filter that is always merged into every `RetrievalOptions`,
-  regardless of what the caller provides. Prevents accidental data leaks when the application
-  forgets a tenant/permission filter. Implement as a thin `IRetrievalPipeline` decorator (same
-  pattern as `CachedRetrievalPipeline`, wired via the `InnerPipelineKey` keyed service); a
-  filter factory receives the current scope (e.g. tenant ID from DI) and returns an
-  `AndMetadataFilter` combined with the caller's own filter. Must compose correctly with both
-  the cached and hybrid pipelines.
-
 - [ ] **Multi-table / keyed DI support**
   Allow registering multiple `IVectorStore` instances for different domains, each pointing to a
   different table with its own model config. Design questions: key the `NpgsqlDataSource` and
