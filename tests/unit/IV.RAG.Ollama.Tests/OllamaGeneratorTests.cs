@@ -105,4 +105,32 @@ public class OllamaGeneratorTests
 
         await act.Should().ThrowAsync<HttpRequestException>();
     }
+
+    [Fact]
+    public async Task GenerateStreamAsync_YieldsMessageContentDeltas_InOrder()
+    {
+        var ndjson = string.Join("\n",
+            """{"message":{"role":"assistant","content":"Hello"},"done":false}""",
+            """{"message":{"role":"assistant","content":" world"},"done":false}""",
+            """{"message":{"role":"assistant","content":""},"done":true}""");
+        var generator = CreateGenerator(ndjson, out _);
+
+        var fragments = new List<string>();
+        await foreach (var fragment in generator.GenerateStreamAsync("q", []))
+            fragments.Add(fragment);
+
+        fragments.Should().Equal("Hello", " world");
+    }
+
+    [Fact]
+    public async Task GenerateStreamAsync_RequestsStreamingMode()
+    {
+        var ndjson = """{"message":{"role":"assistant","content":"x"},"done":true}""";
+        var generator = CreateGenerator(ndjson, out var requests);
+
+        await foreach (var _ in generator.GenerateStreamAsync("q", [])) { }
+
+        var body = await requests.Single().Content!.ReadAsStringAsync();
+        JsonDocument.Parse(body).RootElement.GetProperty("stream").GetBoolean().Should().BeTrue();
+    }
 }

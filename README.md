@@ -338,7 +338,15 @@ foreach (var result in results)
 // Answer — retrieve + generate in one call
 var answer = await pipeline.AnswerAsync("your question");
 Console.WriteLine(answer);
+
+// Answer — streamed token-by-token (for chat UIs)
+await foreach (var fragment in pipeline.AnswerStreamAsync("your question"))
+    Console.Write(fragment);
 ```
+
+`IGenerator.GenerateStreamAsync` and `IAnswerPipeline.AnswerStreamAsync` stream the answer as
+incremental fragments. `OllamaGenerator` streams real tokens from `/api/chat`; generators that
+don't implement streaming fall back to yielding the whole answer as a single fragment.
 
 ### Replace a document
 

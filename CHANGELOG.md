@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-06-03
+
+### Added
+
+- `IGenerator.GenerateStreamAsync(query, chunks, ct)` — streams the answer as incremental text fragments (`IAsyncEnumerable<string>`). Added as a default interface method that yields the whole `GenerateAsync` result as one fragment, so existing generators keep working; `OllamaGenerator` overrides it with real token streaming (newline-delimited JSON from `/api/chat` with `stream: true`, read with `ResponseHeadersRead`).
+- `IAnswerPipeline.AnswerStreamAsync(query, options, ct)` — retrieve-then-stream variant. Default interface method yields the whole `AnswerAsync` result as one fragment; `AnswerPipeline` and `RagPipeline` override it to stream the generator's fragments.
+
 ## [0.17.0] - 2026-06-03
 
 ### Changed

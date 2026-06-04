@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 
 namespace IV.RAG;
@@ -33,5 +34,18 @@ public sealed class AnswerPipeline : IAnswerPipeline
 
         _logger.LogDebug("Generated answer ({Length} chars).", answer.Length);
         return answer;
+    }
+
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<string> AnswerStreamAsync(
+        string query,
+        RetrievalOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Answering (streaming): \"{Query}\".", query);
+
+        var chunks = await _retrieval.QueryAsync(query, options, cancellationToken);
+        await foreach (var fragment in _generator.GenerateStreamAsync(query, chunks, cancellationToken))
+            yield return fragment;
     }
 }

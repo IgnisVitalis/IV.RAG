@@ -10,15 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 3 — Service ergonomics
 
-- [ ] **Streaming generation**
-  `IGenerator.GenerateAsync` returns a materialized string and `OllamaGenerator` sets
-  `Stream: false` (`OllamaGenerator.cs:36`). End-user chat UIs want token streaming.
-  - Add `IAsyncEnumerable<string> GenerateStreamAsync(string query, IReadOnlyList<SearchResult>,
-    CT)` to `IGenerator` and a corresponding `AnswerStreamAsync` on `IAnswerPipeline` /
-    `RagPipeline` / `AnswerPipeline`.
-  - Implement streaming in `OllamaGenerator` (NDJSON streaming from `/api/chat` with
-    `Stream: true`).
-
 - [ ] **Shared remote contract + server endpoint helper**
   The `Remote.Http` topology needs a server that exposes a matching JSON contract, but
   `QueryRequest`/`QueryResponse`/`SearchResultDto`/`ChunkDto`/`OriginDto` are `internal` to
