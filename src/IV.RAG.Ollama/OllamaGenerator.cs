@@ -12,10 +12,10 @@ public sealed class OllamaGenerator : IGenerator
     private readonly string _model;
     private readonly string _systemPrompt;
 
-    /// <summary>Initializes a new instance using a named <c>IV.RAG.Ollama</c> HTTP client.</summary>
+    /// <summary>Initializes a new instance using the Ollama generator HTTP client.</summary>
     public OllamaGenerator(IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
     {
-        _httpClient = httpClientFactory.CreateClient("IV.RAG.Ollama");
+        _httpClient = httpClientFactory.CreateClient(ServiceCollectionExtensions.GeneratorClientName);
         _model = options.Value.GenerationModel;
         _systemPrompt = options.Value.SystemPrompt;
     }

@@ -109,6 +109,34 @@ Use `AddPostgresQueryCache()` instead of `AddInMemoryQueryCache()` to store the 
 
 **Empty results are not cached** — a query that finds nothing is always forwarded to the inner pipeline, so results appear as soon as matching documents are ingested.
 
+### HTTP resilience & timeouts
+
+The Ollama and remote HTTP clients are wired with the standard resilience handler
+(`Microsoft.Extensions.Http.Resilience`): a per-attempt timeout, bounded retries on transient
+failures, and a circuit breaker. Because embedding and generation have very different latencies,
+they use **separate clients** with separate timeouts:
+
+```csharp
+.AddOllamaEmbedder(o =>
+{
+    o.EmbeddingModel = "nomic-embed-text";
+    o.EmbeddingTimeoutSeconds = 100;   // per-attempt embed timeout (default 100)
+})
+.AddOllamaGenerator(o =>
+{
+    o.GenerationModel = "llama3.2";
+    o.GenerationTimeoutSeconds = 600;  // generation is slower — default 600
+})
+.AddRemoteRetrievalPipeline(o =>
+{
+    o.Endpoint = "https://my-server/api";
+    o.TimeoutSeconds = 100;            // per-attempt remote retrieval timeout (default 100)
+});
+```
+
+Generation requests are **not retried on timeout** (re-running a slow generation only wastes work);
+embedding and remote requests retry on transient failures within their timeout budget.
+
 ### Server — retrieval only
 
 Exposes a retrieval endpoint; does not generate answers.

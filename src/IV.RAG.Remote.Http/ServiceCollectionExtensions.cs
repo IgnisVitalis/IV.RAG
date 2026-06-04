@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 
 namespace IV.RAG;
@@ -23,6 +24,16 @@ public static class ServiceCollectionExtensions
             {
                 var options = sp.GetRequiredService<IOptions<RemoteOptions>>().Value;
                 client.BaseAddress = new Uri(options.Endpoint);
+                client.Timeout = Timeout.InfiniteTimeSpan; // the resilience pipeline owns timeouts
+            })
+            .AddStandardResilienceHandler()
+            .Configure((resilience, sp) =>
+            {
+                var seconds = sp.GetRequiredService<IOptions<RemoteOptions>>().Value.TimeoutSeconds;
+                resilience.AttemptTimeout.Timeout = TimeSpan.FromSeconds(seconds);
+                resilience.Retry.MaxRetryAttempts = 1;
+                resilience.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(seconds * 2);
+                resilience.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(seconds * 2);
             });
 
         builder.Services.AddSingleton<IRetrievalPipeline, RemoteRetrievalPipeline>();

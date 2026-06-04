@@ -10,17 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 2 — Throughput & robustness
 
-- [ ] **HTTP resilience & timeouts on provider clients**
-  `AddOllamaEmbedder` / `AddOllamaGenerator` / `AddRemoteRetrievalPipeline` register a bare
-  `AddHttpClient` with only `BaseAddress` (e.g. `Ollama/ServiceCollectionExtensions.cs:21`).
-  No timeout, retry, or circuit breaker — a hung Ollama generation blocks the caller
-  indefinitely.
-  - Add `Microsoft.Extensions.Http.Resilience` and apply the standard resilience handler to
-    each named client.
-  - Expose `TimeoutSeconds` (and optional retry count) on `OllamaOptions` and `RemoteOptions`;
-    wire into the handler. Pick generation-friendly defaults (generation timeout >> embed
-    timeout).
-
 - [ ] **Validate table / identifier names**
   `TextSearchLanguage` and metadata field names are validated, but `TableName` and
   `QueryCacheTableName` are interpolated into SQL unvalidated (e.g. `PostgresVectorStore.cs:60`,

@@ -23,10 +23,10 @@ public sealed class OllamaEmbedder : IEmbedder
         }
     }
 
-    /// <summary>Initializes a new instance using a named <c>IV.RAG.Ollama</c> HTTP client.</summary>
+    /// <summary>Initializes a new instance using the Ollama embedder HTTP client.</summary>
     public OllamaEmbedder(IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
     {
-        _httpClient = httpClientFactory.CreateClient("IV.RAG.Ollama");
+        _httpClient = httpClientFactory.CreateClient(ServiceCollectionExtensions.EmbedderClientName);
         _options = options.Value;
         _model = options.Value.EmbeddingModel;
     }

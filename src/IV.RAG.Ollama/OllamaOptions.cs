@@ -13,6 +13,19 @@ public sealed class OllamaOptions
     public string GenerationModel { get; set; } = "llama3.2";
 
     /// <summary>
+    /// Per-attempt HTTP timeout, in seconds, for embedding requests. Defaults to <c>100</c>.
+    /// Embedding requests are retried on transient failures within this budget.
+    /// </summary>
+    public int EmbeddingTimeoutSeconds { get; set; } = 100;
+
+    /// <summary>
+    /// Per-attempt HTTP timeout, in seconds, for generation requests. Generation is typically far
+    /// slower than embedding, so this defaults to <c>600</c>. Generation requests are not retried on
+    /// timeout (re-running a slow generation only wastes work).
+    /// </summary>
+    public int GenerationTimeoutSeconds { get; set; } = 600;
+
+    /// <summary>
     /// Dimensionality of the vectors produced by <see cref="EmbeddingModel"/>.
     /// Leave at <c>0</c> (the default) to detect the dimension automatically from the first
     /// embed response. Set explicitly only when a store operation (e.g. migration check) must

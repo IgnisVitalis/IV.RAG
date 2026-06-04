@@ -18,7 +18,7 @@ public class OllamaEmbedderTests
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:11434") };
 
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient("IV.RAG.Ollama").Returns(httpClient);
+        factory.CreateClient("IV.RAG.Ollama.Embedder").Returns(httpClient);
 
         var options = Options.Create(new OllamaOptions { EmbeddingModel = "nomic-embed-text" });
         return new OllamaEmbedder(factory, options);
@@ -71,7 +71,7 @@ public class OllamaEmbedderTests
         var handler = new MockHttpMessageHandler("{}", statusCode: HttpStatusCode.InternalServerError);
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:11434") };
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient("IV.RAG.Ollama").Returns(httpClient);
+        factory.CreateClient("IV.RAG.Ollama.Embedder").Returns(httpClient);
 
         var embedder = new OllamaEmbedder(factory, Options.Create(new OllamaOptions()));
 
@@ -101,7 +101,7 @@ public class OllamaEmbedderTests
         var requests = new List<HttpRequestMessage>();
         var httpClient = new HttpClient(new EchoCountHttpMessageHandler(requests)) { BaseAddress = new Uri("http://localhost:11434") };
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient("IV.RAG.Ollama").Returns(httpClient);
+        factory.CreateClient("IV.RAG.Ollama.Embedder").Returns(httpClient);
         var embedder = new OllamaEmbedder(factory, Options.Create(new OllamaOptions { EmbeddingBatchSize = 2 }));
 
         var result = await embedder.EmbedAsync(new[] { "a", "b", "c", "d", "e" });

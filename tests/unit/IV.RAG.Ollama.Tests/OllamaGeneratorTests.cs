@@ -20,7 +20,7 @@ public class OllamaGeneratorTests
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:11434") };
 
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient("IV.RAG.Ollama").Returns(httpClient);
+        factory.CreateClient("IV.RAG.Ollama.Generator").Returns(httpClient);
 
         return new OllamaGenerator(factory, Options.Create(options ?? new OllamaOptions()));
     }
@@ -97,7 +97,7 @@ public class OllamaGeneratorTests
         var handler = new MockHttpMessageHandler("{}", statusCode: HttpStatusCode.InternalServerError);
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:11434") };
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient("IV.RAG.Ollama").Returns(httpClient);
+        factory.CreateClient("IV.RAG.Ollama.Generator").Returns(httpClient);
 
         var generator = new OllamaGenerator(factory, Options.Create(new OllamaOptions()));
 

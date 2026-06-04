@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-03
+
+### Added
+
+- `OllamaOptions.EmbeddingTimeoutSeconds` (default 100) and `OllamaOptions.GenerationTimeoutSeconds` (default 600) — per-attempt HTTP timeouts for the embedder and generator clients (generation is far slower than embedding).
+- `RemoteOptions.TimeoutSeconds` (default 100) — per-attempt HTTP timeout for remote retrieval.
+
+### Changed
+
+- The Ollama and remote provider HTTP clients now apply the standard resilience handler (`Microsoft.Extensions.Http.Resilience`) — per-attempt timeout, bounded retries on transient failures, and a circuit breaker — replacing the bare clients that had only a base address (a hung request previously blocked the caller indefinitely). `HttpClient.Timeout` is set to infinite so the resilience pipeline governs timeouts.
+- Generation requests are **not** retried on timeout (re-running a slow generation only wastes work); embedding and remote requests retry transient failures within their timeout budget.
+- **Breaking:** Ollama embedding and generation now use separate named HTTP clients (`IV.RAG.Ollama.Embedder` and `IV.RAG.Ollama.Generator`) instead of a shared `IV.RAG.Ollama` client, so they can carry independent timeouts. Only affects code that configured the named HTTP client directly.
+
 ## [0.14.0] - 2026-06-03
 
 ### Changed
