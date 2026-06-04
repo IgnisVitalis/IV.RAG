@@ -19,10 +19,10 @@ public static class ServiceCollectionExtensions
         this RAGBuilder builder,
         Action<OllamaOptions>? configure = null)
     {
-        if (configure is not null)
-            builder.Services.Configure(configure);
-        else
-            builder.Services.AddOptions<OllamaOptions>();
+        builder.Services.AddOptions<OllamaOptions>()
+            .Configure(configure ?? (_ => { }))
+            .Validate(o => Uri.TryCreate(o.Endpoint, UriKind.Absolute, out _), "OllamaOptions.Endpoint must be an absolute URI.")
+            .ValidateOnStart();
 
         builder.Services.AddHttpClient(EmbedderClientName)
             .ConfigureHttpClient((sp, client) =>
@@ -49,10 +49,10 @@ public static class ServiceCollectionExtensions
         this RAGBuilder builder,
         Action<OllamaOptions>? configure = null)
     {
-        if (configure is not null)
-            builder.Services.Configure(configure);
-        else
-            builder.Services.AddOptions<OllamaOptions>();
+        builder.Services.AddOptions<OllamaOptions>()
+            .Configure(configure ?? (_ => { }))
+            .Validate(o => Uri.TryCreate(o.Endpoint, UriKind.Absolute, out _), "OllamaOptions.Endpoint must be an absolute URI.")
+            .ValidateOnStart();
 
         builder.Services.AddHttpClient(GeneratorClientName)
             .ConfigureHttpClient((sp, client) =>

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-06-03
+
+### Changed
+
+- Provider options are now validated at startup (`ValidateOnStart`), matching the chunkers: `PostgresOptions.ConnectionString` must be non-empty, and `OllamaOptions.Endpoint` / `RemoteOptions.Endpoint` must parse as absolute URIs. Misconfiguration fails fast with an `OptionsValidationException` instead of surfacing late and cryptically on first use. Applied in `AddPostgresVectorStore`, `AddOllamaEmbedder`, `AddOllamaGenerator`, and `AddRemoteRetrievalPipeline`.
+
 ## [0.16.0] - 2026-06-03
 
 ### Changed

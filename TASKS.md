@@ -8,16 +8,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ---
 
-## Tier 2 — Throughput & robustness
-
-- [ ] **Startup configuration validation**
-  Chunkers `ValidateOnStart`, but `PostgresOptions.ConnectionString` (empty default) and
-  `OllamaOptions.Endpoint` are unvalidated until first use, so failures surface late and
-  cryptically.
-  - Add `ValidateOnStart` rules: non-empty `ConnectionString`; `Endpoint` parses as an
-    absolute `Uri`. Apply in `AddPostgresVectorStore` / `AddOllamaEmbedder` /
-    `AddOllamaGenerator` / `AddRemoteRetrievalPipeline`.
-
 ## Tier 3 — Service ergonomics
 
 - [ ] **Streaming generation**

@@ -23,7 +23,10 @@ public static class ServiceCollectionExtensions
         this RAGBuilder builder,
         Action<PostgresOptions> configure)
     {
-        builder.Services.Configure<PostgresOptions>(configure);
+        builder.Services.AddOptions<PostgresOptions>()
+            .Configure(configure)
+            .Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString), "PostgresOptions.ConnectionString must not be empty.")
+            .ValidateOnStart();
 
         builder.Services.AddSingleton<NpgsqlDataSource>(sp =>
         {

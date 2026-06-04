@@ -14,10 +14,10 @@ public static class ServiceCollectionExtensions
         this RAGBuilder builder,
         Action<RemoteOptions>? configure = null)
     {
-        if (configure is not null)
-            builder.Services.Configure<RemoteOptions>(configure);
-        else
-            builder.Services.AddOptions<RemoteOptions>();
+        builder.Services.AddOptions<RemoteOptions>()
+            .Configure(configure ?? (_ => { }))
+            .Validate(o => Uri.TryCreate(o.Endpoint, UriKind.Absolute, out _), "RemoteOptions.Endpoint must be an absolute URI.")
+            .ValidateOnStart();
 
         builder.Services.AddHttpClient("IV.RAG.Remote.Http")
             .ConfigureHttpClient((sp, client) =>
