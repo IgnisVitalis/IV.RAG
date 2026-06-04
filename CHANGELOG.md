@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-03
+
+### Added
+
+- `IVectorRetriever` (`Abstractions`) — optional capability extending `IRetriever` with `RetrieveByVectorAsync(float[] embedding, RetrievalOptions, CT)`, for vector retrievers that can search from a precomputed query embedding.
+- `IVectorQueryPipeline` (`Abstractions`) — optional capability exposing `QueryByVectorAsync(float[] embedding, string query, RetrievalOptions, CT)`, so a retrieval pipeline can accept a precomputed query embedding instead of re-embedding.
+
+### Changed
+
+- A cached cold query now embeds the query **once** instead of twice (vector-only and hybrid alike). `CachedRetrievalPipeline` reuses the embedding it computes for the cache probe, passing it through `IVectorQueryPipeline.QueryByVectorAsync` to the inner pipeline and on to `IVectorRetriever.RetrieveByVectorAsync`. Retrievers/pipelines that do not implement the seam fall back to the existing string-based path (re-embed), so behavior is unchanged for custom implementations.
+- `PostgresRetriever` now implements `IVectorRetriever`; `RetrievalPipeline` and `HybridRetrievalPipeline` now implement `IVectorQueryPipeline`. The public `IRetriever.RetrieveAsync(string, …)` and `IRetrievalPipeline.QueryAsync(string, …)` contracts are unchanged and remain the default extension points. In hybrid retrieval only the vector arm reuses the embedding; the lexical arm and reranker still use the query string.
+
 ## [0.11.0] - 2026-06-03
 
 ### Added

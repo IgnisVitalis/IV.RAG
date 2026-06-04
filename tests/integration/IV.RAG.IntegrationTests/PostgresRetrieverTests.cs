@@ -47,6 +47,20 @@ public sealed class PostgresRetrieverTests : IClassFixture<PostgresContainerFixt
     }
 
     [Fact]
+    public async Task RetrieveByVectorAsync_MatchesRetrieveAsync_ForSameQueryVector()
+    {
+        var table = PostgresContainerFixture.NewTable();
+        await SeedAsync(table);
+        var retriever = CreateRetriever(table, VectorCats); // FakeEmbedder maps any text → VectorCats
+        var options = new RetrievalOptions { TopK = 3, MinScore = -1f };
+
+        var viaString = await retriever.RetrieveAsync("query", options);
+        var viaVector = await retriever.RetrieveByVectorAsync(VectorCats, options);
+
+        viaVector.Should().BeEquivalentTo(viaString);
+    }
+
+    [Fact]
     public async Task RetrieveAsync_ReturnsSimilarChunksInDescendingOrder()
     {
         var table = PostgresContainerFixture.NewTable();

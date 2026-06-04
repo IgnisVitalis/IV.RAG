@@ -28,7 +28,7 @@ namespace IV.RAG;
 /// </item>
 /// </list>
 /// </remarks>
-public sealed class HybridRetrievalPipeline : IRetrievalPipeline
+public sealed class HybridRetrievalPipeline : IRetrievalPipeline, IVectorQueryPipeline
 {
     private readonly IRetriever _vectorRetriever;
     private readonly ILexicalRetriever _lexicalRetriever;
@@ -52,20 +52,47 @@ public sealed class HybridRetrievalPipeline : IRetrievalPipeline
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<SearchResult>> QueryAsync(
+    public Task<IReadOnlyList<SearchResult>> QueryAsync(
         string query,
         RetrievalOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         var opts = options ?? new RetrievalOptions();
-        var candidateOptions = new RetrievalOptions
-        {
-            TopK = opts.TopK * _options.CandidateMultiplier,
-            MinScore = opts.MinScore,
-            MetadataFilter = opts.MetadataFilter
-        };
-
+        var candidateOptions = CandidateOptions(opts);
         var vectorTask = _vectorRetriever.RetrieveAsync(query, candidateOptions, cancellationToken);
+        return FuseAndRerankAsync(query, opts, candidateOptions, vectorTask, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<SearchResult>> QueryByVectorAsync(
+        float[] embedding,
+        string query,
+        RetrievalOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var candidateOptions = CandidateOptions(options);
+        // Reuse the precomputed embedding for the vector arm; the lexical arm and reranker still
+        // use the query string. Fall back to the string overload if the retriever lacks the seam.
+        var vectorTask = _vectorRetriever is IVectorRetriever vectorRetriever
+            ? vectorRetriever.RetrieveByVectorAsync(embedding, candidateOptions, cancellationToken)
+            : _vectorRetriever.RetrieveAsync(query, candidateOptions, cancellationToken);
+        return FuseAndRerankAsync(query, options, candidateOptions, vectorTask, cancellationToken);
+    }
+
+    private RetrievalOptions CandidateOptions(RetrievalOptions opts) => new()
+    {
+        TopK = opts.TopK * _options.CandidateMultiplier,
+        MinScore = opts.MinScore,
+        MetadataFilter = opts.MetadataFilter
+    };
+
+    private async Task<IReadOnlyList<SearchResult>> FuseAndRerankAsync(
+        string query,
+        RetrievalOptions opts,
+        RetrievalOptions candidateOptions,
+        Task<IReadOnlyList<SearchResult>> vectorTask,
+        CancellationToken cancellationToken)
+    {
         var lexicalTask = _lexicalRetriever.RetrieveAsync(query, candidateOptions, cancellationToken);
         await Task.WhenAll(vectorTask, lexicalTask);
 

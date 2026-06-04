@@ -6,7 +6,7 @@ using Pgvector;
 namespace IV.RAG;
 
 /// <summary>Retrieves chunks from PostgreSQL using pgvector cosine similarity search.</summary>
-public sealed class PostgresRetriever : IRetriever
+public sealed class PostgresRetriever : IRetriever, IVectorRetriever
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly IEmbedder _embedder;
@@ -27,7 +27,15 @@ public sealed class PostgresRetriever : IRetriever
         CancellationToken cancellationToken = default)
     {
         var embedding = await _embedder.EmbedAsync(query, cancellationToken);
+        return await RetrieveByVectorAsync(embedding, options, cancellationToken);
+    }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<SearchResult>> RetrieveByVectorAsync(
+        float[] embedding,
+        RetrievalOptions options,
+        CancellationToken cancellationToken = default)
+    {
         await using var cmd = _dataSource.CreateCommand();
 
         var filterClause = string.Empty;

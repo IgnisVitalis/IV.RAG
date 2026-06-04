@@ -5,7 +5,7 @@ namespace IV.RAG;
 /// <summary>
 /// Local retrieval pipeline: chunk → embed → store (ingest), embed → retrieve (query).
 /// </summary>
-public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline
+public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline, IVectorQueryPipeline
 {
     private readonly IChunker _chunker;
     private readonly IEmbedder _embedder;
@@ -60,6 +60,25 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline
         _logger.LogDebug("Querying: \"{Query}\".", query);
 
         var results = await _retriever.RetrieveAsync(query, options ?? new RetrievalOptions(), cancellationToken);
+
+        _logger.LogDebug("Retrieved {Count} results.", results.Count);
+        return results;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<SearchResult>> QueryByVectorAsync(
+        float[] embedding,
+        string query,
+        RetrievalOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Querying by precomputed vector: \"{Query}\".", query);
+
+        // Reuse the caller's embedding when the retriever supports it; otherwise fall back to the
+        // string overload (which embeds internally).
+        var results = _retriever is IVectorRetriever vectorRetriever
+            ? await vectorRetriever.RetrieveByVectorAsync(embedding, options, cancellationToken)
+            : await _retriever.RetrieveAsync(query, options, cancellationToken);
 
         _logger.LogDebug("Retrieved {Count} results.", results.Count);
         return results;

@@ -45,7 +45,13 @@ public sealed class CachedRetrievalPipeline : IRetrievalPipeline
         }
 
         _logger?.LogDebug("Cache miss for query \"{Query}\".", query);
-        var results = await _inner.QueryAsync(query, opts, cancellationToken);
+
+        // Reuse the embedding we already computed for the cache probe when the inner pipeline
+        // supports it, so a cold query embeds once instead of twice.
+        var results = _inner is IVectorQueryPipeline vectorPipeline
+            ? await vectorPipeline.QueryByVectorAsync(embedding, query, opts, cancellationToken)
+            : await _inner.QueryAsync(query, opts, cancellationToken);
+
         if (results.Count > 0)
             await _cache.SetAsync(embedding, opts, results, cancellationToken);
         return results;

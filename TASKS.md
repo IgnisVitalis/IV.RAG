@@ -8,23 +8,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ---
 
-## Tier 1 — Production-readiness blockers
-
-- [ ] **Eliminate double embedding on cache miss**
-  `CachedRetrievalPipeline` embeds the query to probe the cache (`CachedRetrievalPipeline.cs:38`),
-  then on a miss the inner `PostgresRetriever` embeds the same query again
-  (`PostgresRetriever.cs:29`); hybrid retrieval embeds a third time. Every cold query pays for
-  2–3 embed calls.
-  - Introduce a vector-reuse seam. Preferred: add an internal
-    `RetrieveByVectorAsync(float[] embedding, RetrievalOptions, CT)` to the vector retriever,
-    with the existing `RetrieveAsync(string, …)` delegating to it after embedding once.
-  - Let `CachedRetrievalPipeline` and `HybridRetrievalPipeline` pass the already-computed
-    embedding through to the vector retriever instead of re-embedding.
-  - Keep the public `IRetriever.RetrieveAsync(string, …)` contract intact for custom
-    implementations (the string overload stays the default extension point).
-  - Acceptance: a unit/integration test with a counting fake embedder asserts exactly one
-    embed call per cold query and zero per cache hit.
-
 ## Tier 2 — Throughput & robustness
 
 - [ ] **Batch embedding API**

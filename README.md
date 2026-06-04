@@ -79,6 +79,8 @@ The reranker receives the full fused candidate list and returns the top `TopK` r
 
 Wraps any retrieval pipeline with a transparent semantic cache. Semantically similar queries return cached results without hitting the vector store or embedder again. Works with both vector-only and hybrid pipelines.
 
+On a cache **miss** the query is embedded only once: the embedding computed for the cache lookup is reused for retrieval rather than re-embedded by the inner pipeline.
+
 ```csharp
 services.AddRagToolkit()
     .AddSentenceChunker()
