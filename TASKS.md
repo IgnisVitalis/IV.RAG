@@ -10,18 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 2 — Throughput & robustness
 
-- [ ] **Batch embedding API**
-  `IEmbedder.EmbedAsync` is single-text (`IEmbedder.cs:10`), and `RetrievalPipeline.IngestAsync`
-  embeds chunks one-by-one (`RetrievalPipeline.cs:41`). A 500-chunk document = 500 serial HTTP
-  calls.
-  - Add `Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CT)` to
-    `IEmbedder` (default interface method delegating to the scalar overload keeps custom
-    impls working), or a separate `IBatchEmbedder`.
-  - Implement the batch call in `OllamaEmbedder` against `/api/embed` (it accepts an array
-    input). Preserve dimension auto-detection from the first vector in the batch.
-  - Use batching in `RetrievalPipeline.IngestAsync` and in `EmbeddingMigrator.MigrateAsync`
-    (`EmbeddingMigrator.cs:62` `FlushAsync`).
-
 - [ ] **Batched / COPY-based inserts in the vector store**
   `SetAsync` inserts each chunk with a separate `INSERT ... ExecuteNonQueryAsync` inside the
   loop (`PostgresVectorStore.cs:71-91`).

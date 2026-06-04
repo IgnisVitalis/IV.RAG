@@ -25,7 +25,7 @@ public class RetrievalPipelineTests
         var embedding = new float[] { 0.1f, 0.2f };
 
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(chunk));
-        _embedder.EmbedAsync(chunk.Text, Arg.Any<CancellationToken>()).Returns(embedding);
+        _embedder.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>()).Returns(new[] { embedding });
 
         await _pipeline.IngestAsync(doc);
 
@@ -40,7 +40,8 @@ public class RetrievalPipelineTests
     {
         var doc = new TestDocument("text");
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
-        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+        _embedder.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => (IReadOnlyList<float[]>)ci.Arg<IReadOnlyList<string>>().Select(_ => new float[] { 1f }).ToArray());
 
         IEnumerable<Chunk>? replaced = null;
         _vectorStore.When(x => x.SetAsync(Arg.Any<Document.Origin>(), Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
@@ -61,7 +62,8 @@ public class RetrievalPipelineTests
             new Chunk { Text = "b", Origin = doc.Source }
         };
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(chunks));
-        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+        _embedder.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => (IReadOnlyList<float[]>)ci.Arg<IReadOnlyList<string>>().Select(_ => new float[] { 1f }).ToArray());
 
         IEnumerable<Chunk>? replaced = null;
         _vectorStore.When(x => x.SetAsync(Arg.Any<Document.Origin>(), Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
@@ -83,7 +85,8 @@ public class RetrievalPipelineTests
             new Chunk { Text = "c", Origin = doc.Source }
         };
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(chunks));
-        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+        _embedder.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => (IReadOnlyList<float[]>)ci.Arg<IReadOnlyList<string>>().Select(_ => new float[] { 1f }).ToArray());
 
         IEnumerable<Chunk>? replaced = null;
         _vectorStore.When(x => x.SetAsync(Arg.Any<Document.Origin>(), Arg.Any<IEnumerable<Chunk>>(), Arg.Any<CancellationToken>()))
@@ -99,7 +102,8 @@ public class RetrievalPipelineTests
     {
         var doc = new TestDocument("text");
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
-        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+        _embedder.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => (IReadOnlyList<float[]>)ci.Arg<IReadOnlyList<string>>().Select(_ => new float[] { 1f }).ToArray());
 
         await _pipeline.IngestAsync(doc);
 
@@ -173,7 +177,8 @@ public class RetrievalPipelineTests
 
         var doc = new TestDocument("text");
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
-        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+        _embedder.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => (IReadOnlyList<float[]>)ci.Arg<IReadOnlyList<string>>().Select(_ => new float[] { 1f }).ToArray());
 
         await pipeline.IngestAsync(doc);
 
@@ -185,7 +190,8 @@ public class RetrievalPipelineTests
     {
         var doc = new TestDocument("text");
         _chunker.ChunkAsync(doc, Arg.Any<CancellationToken>()).Returns(Chunks(new Chunk { Text = "text", Origin = doc.Source }));
-        _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new float[] { 1f });
+        _embedder.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => (IReadOnlyList<float[]>)ci.Arg<IReadOnlyList<string>>().Select(_ => new float[] { 1f }).ToArray());
 
         var act = () => _pipeline.IngestAsync(doc);
 

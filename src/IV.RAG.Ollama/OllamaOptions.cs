@@ -21,6 +21,14 @@ public sealed class OllamaOptions
     public int EmbeddingDimensions { get; set; } = 0;
 
     /// <summary>
+    /// Maximum number of texts sent to the Ollama <c>/api/embed</c> endpoint in a single request
+    /// when embedding in batch. Larger values reduce HTTP round-trips; smaller values bound request
+    /// size and memory. Batches larger than this are split into multiple requests automatically.
+    /// Defaults to <c>32</c>.
+    /// </summary>
+    public int EmbeddingBatchSize { get; set; } = 32;
+
+    /// <summary>
     /// System prompt sent to the model before the user message.
     /// Controls the model's role and answer constraints.
     /// </summary>

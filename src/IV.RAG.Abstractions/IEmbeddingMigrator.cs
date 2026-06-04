@@ -8,11 +8,12 @@ public interface IEmbeddingMigrator
 
     /// <summary>
     /// Re-embeds all outdated chunks and updates the vector store in place.
-    /// Up to <paramref name="maxConcurrency"/> embed calls are issued in parallel.
+    /// Outdated chunks are processed in batches of up to <paramref name="batchSize"/>, embedded with
+    /// a single batch call per batch where the embedder supports it.
     /// Reports progress via <paramref name="progress"/> after each chunk is processed.
     /// </summary>
     Task MigrateAsync(
         IProgress<EmbeddingMigrationProgress>? progress = null,
-        int maxConcurrency = 4,
+        int batchSize = 32,
         CancellationToken cancellationToken = default);
 }

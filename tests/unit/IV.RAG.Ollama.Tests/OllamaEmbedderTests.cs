@@ -60,7 +60,9 @@ public class OllamaEmbedderTests
         var body = await requests.Single().Content!.ReadAsStringAsync();
         var doc = JsonDocument.Parse(body);
         doc.RootElement.GetProperty("model").GetString().Should().Be("nomic-embed-text");
-        doc.RootElement.GetProperty("input").GetString().Should().Be("test input");
+        var input = doc.RootElement.GetProperty("input");
+        input.ValueKind.Should().Be(JsonValueKind.Array);
+        input.EnumerateArray().Select(e => e.GetString()).Should().Equal("test input");
     }
 
     [Fact]
@@ -76,6 +78,58 @@ public class OllamaEmbedderTests
         var act = async () => await embedder.EmbedAsync("text");
 
         await act.Should().ThrowAsync<HttpRequestException>();
+    }
+
+    [Fact]
+    public async Task EmbedAsync_Batch_ReturnsEmbeddingsInInputOrder_InOneRequest()
+    {
+        var responseJson = JsonSerializer.Serialize(new { embeddings = new[] { new[] { 1f }, new[] { 2f }, new[] { 3f } } });
+        var embedder = CreateEmbedder(responseJson, out var requests);
+
+        var result = await embedder.EmbedAsync(new[] { "a", "b", "c" });
+
+        result.Should().HaveCount(3);
+        result[0].Should().Equal(1f);
+        result[1].Should().Equal(2f);
+        result[2].Should().Equal(3f);
+        requests.Should().ContainSingle(); // within batch size → single HTTP call
+    }
+
+    [Fact]
+    public async Task EmbedAsync_Batch_LargerThanBatchSize_SplitsIntoMultipleRequests()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var httpClient = new HttpClient(new EchoCountHttpMessageHandler(requests)) { BaseAddress = new Uri("http://localhost:11434") };
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient("IV.RAG.Ollama").Returns(httpClient);
+        var embedder = new OllamaEmbedder(factory, Options.Create(new OllamaOptions { EmbeddingBatchSize = 2 }));
+
+        var result = await embedder.EmbedAsync(new[] { "a", "b", "c", "d", "e" });
+
+        result.Should().HaveCount(5);
+        requests.Should().HaveCount(3); // ceil(5 / 2)
+    }
+
+    [Fact]
+    public async Task EmbedAsync_Batch_ResponseCountMismatch_Throws()
+    {
+        var responseJson = JsonSerializer.Serialize(new { embeddings = new[] { new[] { 1f } } }); // 1 vector for 2 inputs
+        var embedder = CreateEmbedder(responseJson, out _);
+
+        var act = async () => await embedder.EmbedAsync(new[] { "a", "b" });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task EmbedAsync_EmptyBatch_ReturnsEmpty_WithoutCallingServer()
+    {
+        var embedder = CreateEmbedder("{}", out var requests);
+
+        var result = await embedder.EmbedAsync(Array.Empty<string>());
+
+        result.Should().BeEmpty();
+        requests.Should().BeEmpty();
     }
 }
 
@@ -102,5 +156,26 @@ internal sealed class MockHttpMessageHandler : HttpMessageHandler
         {
             Content = new StringContent(_responseContent, Encoding.UTF8, "application/json")
         });
+    }
+}
+
+// Returns one embedding per input in the request, so sub-batching can be observed via request count.
+internal sealed class EchoCountHttpMessageHandler : HttpMessageHandler
+{
+    private readonly List<HttpRequestMessage> _requests;
+
+    internal EchoCountHttpMessageHandler(List<HttpRequestMessage> requests) => _requests = requests;
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        _requests.Add(request);
+        var body = await request.Content!.ReadAsStringAsync(cancellationToken);
+        var count = JsonDocument.Parse(body).RootElement.GetProperty("input").GetArrayLength();
+        var embeddings = Enumerable.Range(0, count).Select(_ => new[] { 0.5f }).ToArray();
+        var json = JsonSerializer.Serialize(new { embeddings });
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
     }
 }

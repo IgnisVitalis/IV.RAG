@@ -35,7 +35,7 @@ public sealed class EmbeddingMigrator : IEmbeddingMigrator
     /// <inheritdoc/>
     public async Task MigrateAsync(
         IProgress<EmbeddingMigrationProgress>? progress = null,
-        int maxConcurrency = 4,
+        int batchSize = 32,
         CancellationToken cancellationToken = default)
     {
         int total;
@@ -57,24 +57,24 @@ public sealed class EmbeddingMigrator : IEmbeddingMigrator
             total, _embedder.ModelInfo);
 
         var processed = 0;
-        var batch = new List<Chunk>(maxConcurrency);
+        var batch = new List<Chunk>(batchSize);
 
         async Task FlushAsync()
         {
-            await Task.WhenAll(batch.Select(async chunk =>
+            var newEmbeddings = await _embedder.EmbedAsync(batch.Select(c => c.Text).ToList(), cancellationToken);
+            for (var i = 0; i < batch.Count; i++)
             {
-                var newEmbedding = await _embedder.EmbedAsync(chunk.Text, cancellationToken);
-                await _vectorStore.UpdateEmbeddingAsync(chunk.Id!, newEmbedding, cancellationToken);
-                var done = Interlocked.Increment(ref processed);
-                progress?.Report(new EmbeddingMigrationProgress(total, done, chunk.Origin));
-            }));
+                await _vectorStore.UpdateEmbeddingAsync(batch[i].Id!, newEmbeddings[i], cancellationToken);
+                processed++;
+                progress?.Report(new EmbeddingMigrationProgress(total, processed, batch[i].Origin));
+            }
             batch.Clear();
         }
 
         await foreach (var chunk in _vectorStore.GetOutdatedAsync(cancellationToken))
         {
             batch.Add(chunk);
-            if (batch.Count == maxConcurrency)
+            if (batch.Count == batchSize)
                 await FlushAsync();
         }
 

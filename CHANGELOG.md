@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-03
+
+### Added
+
+- `IEmbedder.EmbedAsync(IReadOnlyList<string>, CancellationToken)` — batch embedding. Added as a **default interface method** that calls the scalar overload sequentially, so existing custom embedders keep working unchanged; providers override it for native batch support.
+- `OllamaOptions.EmbeddingBatchSize` (default 32) — maximum number of texts per `/api/embed` request; larger batches are split into multiple requests automatically.
+
+### Changed
+
+- `OllamaEmbedder` implements native batch embedding against `/api/embed` (whose `input` accepts an array), splitting batches larger than `EmbeddingBatchSize`. The scalar `EmbedAsync(string)` now delegates to the batch path. A response whose embedding count does not match the request count throws a descriptive `InvalidOperationException` naming the model and endpoint.
+- `RetrievalPipeline.IngestAsync` now embeds all of a document's chunks in one batch call instead of one HTTP round-trip per chunk (a 500-chunk document went from 500 serial calls to a handful).
+- **Breaking:** `IEmbeddingMigrator.MigrateAsync` / `EmbeddingMigrator.MigrateAsync` parameter `maxConcurrency` (default 4) renamed to `batchSize` (default 32). Each flush now issues a single batch embed call per batch rather than N parallel scalar calls.
+
 ## [0.12.0] - 2026-06-03
 
 ### Added

@@ -34,17 +34,43 @@ public sealed class OllamaEmbedder : IEmbedder
     /// <inheritdoc/>
     public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
     {
-        var request = new EmbedRequest(_model, text);
-        var response = await _httpClient.PostAsJsonAsync("/api/embed", request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        var embeddings = await EmbedAsync([text], cancellationToken);
+        return embeddings[0];
+    }
 
-        var result = await response.Content.ReadFromJsonAsync<EmbedResponse>(cancellationToken: cancellationToken);
-        var embedding = result!.Embeddings[0];
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+    {
+        if (texts.Count == 0) return [];
 
-        // Detect dimension from first response when not configured explicitly
-        if (_options.EmbeddingDimensions == 0)
-            Interlocked.CompareExchange(ref _detectedDimensions, embedding.Length, 0);
+        var batchSize = Math.Max(1, _options.EmbeddingBatchSize);
+        var results = new List<float[]>(texts.Count);
 
-        return embedding;
+        for (var start = 0; start < texts.Count; start += batchSize)
+        {
+            var length = Math.Min(batchSize, texts.Count - start);
+            var slice = new string[length];
+            for (var i = 0; i < length; i++)
+                slice[i] = texts[start + i];
+
+            var request = new EmbedRequest(_model, slice);
+            var response = await _httpClient.PostAsJsonAsync("/api/embed", request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var result = await response.Content.ReadFromJsonAsync<EmbedResponse>(cancellationToken: cancellationToken);
+            var embeddings = result?.Embeddings;
+            if (embeddings is null || embeddings.Length != length)
+                throw new InvalidOperationException(
+                    $"Ollama '/api/embed' returned {(embeddings is null ? "no" : embeddings.Length.ToString())} embeddings " +
+                    $"for {length} input(s) (model '{_model}', endpoint '{_httpClient.BaseAddress}').");
+
+            results.AddRange(embeddings);
+        }
+
+        // Detect dimension from the first response when not configured explicitly
+        if (_options.EmbeddingDimensions == 0 && results.Count > 0)
+            Interlocked.CompareExchange(ref _detectedDimensions, results[0].Length, 0);
+
+        return results;
     }
 }

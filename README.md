@@ -176,14 +176,14 @@ if (await migrator.IsNeededAsync(cancellationToken))
             logger.LogInformation(
                 "[{Processed}/{Total}] re-embedded chunk from {Origin}",
                 p.Processed, p.Total, p.CurrentOrigin)),
-        maxConcurrency: 4,        // concurrent embed calls per batch (default 4)
+        batchSize: 32,            // chunks embedded per batch request (default 32)
         cancellationToken: ct);
 
     logger.LogInformation("Migration complete.");
 }
 ```
 
-Migration re-embeds all outdated chunks **in-place** — no data loss, no re-fetching source documents. The text stored alongside each vector is used directly. Up to `maxConcurrency` embed calls run concurrently per batch.
+Migration re-embeds all outdated chunks **in-place** — no data loss, no re-fetching source documents. The text stored alongside each vector is used directly. Outdated chunks are processed in batches of `batchSize`, each embedded with a single batch request where the embedder supports it (`OllamaEmbedder` does, via `/api/embed`).
 
 `IsNeededAsync()` returns `false` when the store is empty or all chunks already match the current model — safe to call on every startup with no cost when nothing has changed.
 

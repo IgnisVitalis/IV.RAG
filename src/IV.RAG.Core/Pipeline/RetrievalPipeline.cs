@@ -36,13 +36,15 @@ public sealed class RetrievalPipeline : IIngestionPipeline, IRetrievalPipeline, 
     {
         _logger.LogDebug("Ingesting document of type {DocumentType}.", document.GetType().Name);
 
-        var chunks = new List<Chunk>();
-        var chunkIndex = 0;
+        var rawChunks = new List<Chunk>();
         await foreach (var chunk in _chunker.ChunkAsync(document, cancellationToken))
-        {
-            var embedding = await _embedder.EmbedAsync(chunk.Text, cancellationToken);
-            chunks.Add(chunk with { Id = Guid.NewGuid().ToString(), ChunkIndex = chunkIndex++, Embedding = embedding });
-        }
+            rawChunks.Add(chunk);
+
+        var embeddings = await _embedder.EmbedAsync(rawChunks.Select(c => c.Text).ToList(), cancellationToken);
+
+        var chunks = new List<Chunk>(rawChunks.Count);
+        for (var i = 0; i < rawChunks.Count; i++)
+            chunks.Add(rawChunks[i] with { Id = Guid.NewGuid().ToString(), ChunkIndex = i, Embedding = embeddings[i] });
 
         await _vectorStore.SetAsync(document.Source, chunks, cancellationToken);
         _logger.LogDebug("Ingested {Count} chunks.", chunks.Count);
