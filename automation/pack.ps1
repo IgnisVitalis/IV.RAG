@@ -19,6 +19,7 @@ $SrcProjects = @(
     'src/IV.RAG.Ingestion'
     'src/IV.RAG.Ollama'
     'src/IV.RAG.Postgres'
+    'src/IV.RAG.Remote.Contracts'
     'src/IV.RAG.Remote.Http'
 )
 

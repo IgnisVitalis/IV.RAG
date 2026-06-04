@@ -10,17 +10,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ## Tier 3 — Service ergonomics
 
-- [ ] **Shared remote contract + server endpoint helper**
-  The `Remote.Http` topology needs a server that exposes a matching JSON contract, but
-  `QueryRequest`/`QueryResponse`/`SearchResultDto`/`ChunkDto`/`OriginDto` are `internal` to
-  the client package (e.g. `QueryRequest.cs:5`). A server author re-implements the shape by
-  hand, inviting drift.
-  - Extract the DTOs into a new `IV.RAG.Remote.Contracts` package (public, depends only on
-    `Abstractions`), referenced by `IV.RAG.Remote.Http`.
-  - Add an optional server-side mapping helper (and/or a minimal-API endpoint extension) that
-    binds `IRetrievalPipeline` to the query contract, closing the client/server loop.
-  - Update README's server-only and client topologies to reference the shared package.
-
 - [ ] **Observability: tracing, metrics, health checks**
   Good `ILogger` usage exists, but no `ActivitySource`/metrics and no `IHealthCheck` for
   Postgres/Ollama reachability.

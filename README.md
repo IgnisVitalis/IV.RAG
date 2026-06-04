@@ -13,6 +13,7 @@ A composable .NET 9 toolkit for building RAG (Retrieval-Augmented Generation) pi
 | `IV.RAG.Ingestion` | Document types and chunkers (`PlainTextDocument`, `FixedSizeChunker`, `SentenceChunker`). |
 | `IV.RAG.Ollama` | `IEmbedder` and `IGenerator` backed by Ollama (`/api/embed`, `/api/chat`). |
 | `IV.RAG.Postgres` | `IVectorStore`, `IRetriever`, and `ILexicalRetriever` backed by PostgreSQL + pgvector + full-text search. Model-versioned vector storage and semantic query cache. |
+| `IV.RAG.Remote.Contracts` | Public request/response DTOs (`QueryRequest`, `QueryResponse`, …) and `RemoteContract` mapping, shared by the remote client and a server. Depends only on Abstractions. |
 | `IV.RAG.Remote.Http` | `IRetrievalPipeline` proxy — forwards queries to a remote retrieval server over HTTP. |
 
 ## Deployment topologies
@@ -148,7 +149,18 @@ services.AddRetrievalPipeline()
     .AddPostgresVectorStore(o => { o.ConnectionString = "..."; });
 
 // inject IIngestionPipeline for your ingest endpoint
-// inject IRetrievalPipeline for your query endpoint
+```
+
+Expose the query endpoint with the shared `IV.RAG.Remote.Contracts` package — the same DTOs and
+`RemoteContract` mapping the `IV.RAG.Remote.Http` client uses, so the wire shape can't drift:
+
+```csharp
+// using IV.RAG; (QueryRequest, RemoteContract)
+app.MapPost("/api/query", async (QueryRequest request, IRetrievalPipeline pipeline) =>
+{
+    var results = await pipeline.QueryAsync(request.Query, request.ToRetrievalOptions());
+    return results.ToQueryResponse();
+});
 ```
 
 ### Client — remote retrieval + local generation
@@ -525,6 +537,7 @@ src/
   IV.RAG.Ingestion/        ← chunkers + document types
   IV.RAG.Ollama/           ← embedder + generator
   IV.RAG.Postgres/         ← vector store + vector retriever + lexical retriever + query cache
+  IV.RAG.Remote.Contracts/ ← shared remote query/response DTOs + mapping (client + server)
   IV.RAG.Remote.Http/      ← remote retrieval proxy
 tests/
   unit/                    ← no infrastructure required

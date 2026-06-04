@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-06-03
+
+### Added
+
+- **`IV.RAG.Remote.Contracts`** — new package with the public remote wire DTOs (`QueryRequest`, `QueryResponse`, `SearchResultDto`, `ChunkDto`, `OriginDto`) and a `RemoteContract` mapping helper (`ToQueryRequest` / `ToRetrievalOptions` / `ToQueryResponse` / `ToSearchResults` / `ToDto`). Depends only on `Abstractions`, so a server can produce exactly the wire shape the `IV.RAG.Remote.Http` client consumes without re-implementing it by hand. The README's server-only topology now shows a minimal-API `/api/query` endpoint built from it.
+
+### Changed
+
+- The remote DTOs moved from `internal` types in `IV.RAG.Remote.Http` to the public `IV.RAG.Remote.Contracts` package; `RemoteRetrievalPipeline` references them and maps via `RemoteContract`. `Remote.Http` now references `Remote.Contracts` — a deliberate, documented exception to the "providers reference only Abstractions" rule, since the client and server need one source of truth for the wire contract.
+
 ## [0.18.0] - 2026-06-03
 
 ### Added

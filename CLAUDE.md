@@ -18,6 +18,7 @@ src/
   IV.RAG.Ingestion       ← document types + chunkers (PlainTextDocument, FixedSizeChunker, SentenceChunker)
   IV.RAG.Ollama          ← IEmbedder + IGenerator backed by Ollama HTTP API
   IV.RAG.Postgres        ← IVectorStore + IRetriever backed by pgvector via Npgsql
+  IV.RAG.Remote.Contracts ← shared remote query/response DTOs + mapping (client + server)
   IV.RAG.Remote.Http     ← IRetrievalPipeline proxy — calls a remote retrieval server over HTTP
 tests/
   unit/                  ← no infrastructure required, fast
@@ -36,11 +37,14 @@ Directory.Packages.props ← central NuGet version management
 | Ingestion | IV.RAG.Ingestion | document processing |
 | Providers | IV.RAG.Ollama | embedder + generator |
 | Providers | IV.RAG.Postgres | vector store + retriever |
+| Contracts | IV.RAG.Remote.Contracts | remote query/response DTOs + mapping |
 | Providers | IV.RAG.Remote.Http | remote retrieval proxy |
 
 ## Dependency rule
 
-`Abstractions` has no project references. All other packages reference only `Abstractions`. Nothing in `src/` references sibling packages. Consumers wire providers together at startup.
+`Abstractions` has no project references. Provider packages (`Ollama`, `Postgres`, `Remote.Http`) reference only `Abstractions` and never each other, so consumers can swap them freely. Consumers wire providers together at startup.
+
+The one exception is `IV.RAG.Remote.Contracts` — a shared wire-contract package that acts like a second foundation (analogous to `Abstractions`): it references only `Abstractions`, and `Remote.Http` references it so the HTTP client and a server implementation share a single DTO + mapping definition. This is a deliberate, narrow exception to the "no sibling references" rule, justified by the client/server contract needing one source of truth.
 
 ## Common commands
 

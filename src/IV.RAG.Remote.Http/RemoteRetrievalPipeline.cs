@@ -1,6 +1,4 @@
 using System.Net.Http.Json;
-using System.Text.Json;
-using IV.RAG.Http;
 using Microsoft.Extensions.Options;
 
 namespace IV.RAG;
@@ -29,23 +27,12 @@ public sealed class RemoteRetrievalPipeline : IRetrievalPipeline
         CancellationToken cancellationToken = default)
     {
         var opts = options ?? new RetrievalOptions();
-        var request = new QueryRequest(query, opts.TopK, opts.MinScore, opts.MetadataFilter);
+        var request = RemoteContract.ToQueryRequest(query, opts);
 
         var response = await _httpClient.PostAsJsonAsync(_queryPath, request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<QueryResponse>(cancellationToken: cancellationToken);
-        return result!.Results.Select(ToSearchResult).ToList();
+        return result!.ToSearchResults();
     }
-
-    private static SearchResult ToSearchResult(SearchResultDto dto) => new(
-        Chunk: new Chunk
-        {
-            Id = dto.Chunk.Id,
-            Text = dto.Chunk.Text,
-            ChunkIndex = dto.Chunk.ChunkIndex,
-            Origin = new Document.Origin(dto.Chunk.Origin.SourceId, dto.Chunk.Origin.DocumentType, dto.Chunk.Origin.DocumentId),
-            Metadata = dto.Chunk.Metadata
-        },
-        Score: dto.Score);
 }

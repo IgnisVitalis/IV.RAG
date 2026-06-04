@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IV.RAG.Abstractions\IV.RAG.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

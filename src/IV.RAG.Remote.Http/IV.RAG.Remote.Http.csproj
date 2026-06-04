@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IV.RAG.Abstractions\IV.RAG.Abstractions.csproj" />
+    <ProjectReference Include="..\IV.RAG.Remote.Contracts\IV.RAG.Remote.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
