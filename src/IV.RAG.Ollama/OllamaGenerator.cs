@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using IV.RAG.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace IV.RAG;
@@ -13,13 +14,17 @@ public sealed class OllamaGenerator : IGenerator
     private readonly HttpClient _httpClient;
     private readonly string _model;
     private readonly string _systemPrompt;
+    private readonly int _maxContextChars;
+    private readonly ILogger<OllamaGenerator>? _logger;
 
     /// <summary>Initializes a new instance using the Ollama generator HTTP client.</summary>
-    public OllamaGenerator(IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
+    public OllamaGenerator(IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options, ILogger<OllamaGenerator>? logger = null)
     {
         _httpClient = httpClientFactory.CreateClient(ServiceCollectionExtensions.GeneratorClientName);
         _model = options.Value.GenerationModel;
         _systemPrompt = options.Value.SystemPrompt;
+        _maxContextChars = options.Value.MaxContextChars;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -79,14 +84,29 @@ public sealed class OllamaGenerator : IGenerator
         }
     }
 
-    private static string BuildContext(IReadOnlyList<SearchResult> chunks)
+    // Chunks arrive ranked best-first. When a context budget is set, include them in order until the
+    // next one would exceed it, dropping the lowest-ranked. The top chunk is always included.
+    private string BuildContext(IReadOnlyList<SearchResult> chunks)
     {
         var sb = new StringBuilder();
-        for (var i = 0; i < chunks.Count; i++)
+        var included = 0;
+        foreach (var result in chunks)
         {
-            if (i > 0) sb.AppendLine();
-            sb.AppendLine($"[{i + 1}] {chunks[i].Chunk.Text}");
+            var entry = $"[{included + 1}] {result.Chunk.Text}";
+            if (_maxContextChars > 0 && sb.Length > 0 && sb.Length + entry.Length + 1 > _maxContextChars)
+                break;
+
+            if (sb.Length > 0) sb.AppendLine();
+            sb.AppendLine(entry);
+            included++;
         }
+
+        if (included < chunks.Count)
+            _logger?.LogDebug(
+                "Context budget of {MaxChars} chars reached: included {Included} of {Total} chunks, " +
+                "dropped {Dropped} lowest-ranked.",
+                _maxContextChars, included, chunks.Count, chunks.Count - included);
+
         return sb.ToString().TrimEnd();
     }
 }

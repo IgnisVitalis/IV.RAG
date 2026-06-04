@@ -42,6 +42,14 @@ public sealed class OllamaOptions
     public int EmbeddingBatchSize { get; set; } = 32;
 
     /// <summary>
+    /// Maximum number of characters of retrieved context included in the generation prompt. Chunks
+    /// are added highest-ranked first until the budget is reached; lower-ranked chunks are then
+    /// dropped (with a debug log). The top-ranked chunk is always included even if it alone exceeds
+    /// the budget. <c>0</c> (the default) means no limit.
+    /// </summary>
+    public int MaxContextChars { get; set; } = 0;
+
+    /// <summary>
     /// System prompt sent to the model before the user message.
     /// Controls the model's role and answer constraints.
     /// </summary>

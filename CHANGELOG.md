@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-03
+
+### Added
+
+- `OllamaOptions.MaxContextChars` (default `0` = no limit) — caps the characters of retrieved context placed in the generation prompt. `OllamaGenerator.BuildContext` now includes chunks highest-ranked first until the budget is reached and drops the lowest-ranked (logging a debug message); the top-ranked chunk is always included. Prevents large `TopK` × large chunks from overflowing the model context.
+
+### Changed
+
+- `OllamaGenerator` constructor accepts an optional `ILogger<OllamaGenerator>` (used to log context truncation). DI resolves it automatically; manual construction is unaffected (the parameter defaults to `null`).
+
 ## [0.21.0] - 2026-06-03
 
 ### Added

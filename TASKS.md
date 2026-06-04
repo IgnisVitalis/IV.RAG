@@ -8,14 +8,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ---
 
-## Tier 3 — Service ergonomics
-
-- [ ] **Generator context-window budget**
-  `OllamaGenerator.BuildContext` concatenates all retrieved chunks unbounded
-  (`OllamaGenerator.cs:44`); large `TopK` × large chunks can overflow the model context.
-  - Add a configurable char/token cap to `OllamaOptions` with truncation (drop lowest-ranked
-    chunks first) and a debug log when truncation occurs.
-
 ## Tier 4 — Access control & multi-store (multi-tenant service primitives)
 
 These were the original backlog. For a RAG service serving end applications they are

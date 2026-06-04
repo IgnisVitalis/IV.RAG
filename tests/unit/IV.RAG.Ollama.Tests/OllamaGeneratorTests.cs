@@ -107,6 +107,46 @@ public class OllamaGeneratorTests
     }
 
     [Fact]
+    public async Task GenerateAsync_NoContextLimit_IncludesAllChunks()
+    {
+        var generator = CreateGenerator(ChatResponse("ok"), out var requests); // default MaxContextChars = 0
+        var chunks = new[]
+        {
+            new SearchResult(new Chunk { Text = "alpha", Origin = TestOrigin }, 0.9f),
+            new SearchResult(new Chunk { Text = "beta", Origin = TestOrigin }, 0.5f),
+        };
+
+        await generator.GenerateAsync("q", chunks);
+
+        var body = await requests.Single().Content!.ReadAsStringAsync();
+        body.Should().Contain("alpha").And.Contain("beta");
+    }
+
+    [Fact]
+    public async Task GenerateAsync_MaxContextChars_DropsLowestRankedChunks()
+    {
+        var options = new OllamaOptions { MaxContextChars = 70 };
+        var generator = CreateGenerator(ChatResponse("ok"), out var requests, options);
+        var chunks = new[]
+        {
+            new SearchResult(new Chunk { Text = new string('a', 50), Origin = TestOrigin }, 0.9f),
+            new SearchResult(new Chunk { Text = new string('b', 50), Origin = TestOrigin }, 0.5f),
+            new SearchResult(new Chunk { Text = new string('c', 50), Origin = TestOrigin }, 0.1f),
+        };
+
+        await generator.GenerateAsync("q", chunks);
+
+        var body = await requests.Single().Content!.ReadAsStringAsync();
+        var userMessage = JsonDocument.Parse(body).RootElement.GetProperty("messages")
+            .EnumerateArray().First(m => m.GetProperty("role").GetString() == "user")
+            .GetProperty("content").GetString()!;
+
+        userMessage.Should().Contain(new string('a', 50));      // top-ranked kept
+        userMessage.Should().NotContain(new string('b', 50));   // lower-ranked dropped
+        userMessage.Should().NotContain(new string('c', 50));
+    }
+
+    [Fact]
     public async Task GenerateStreamAsync_YieldsMessageContentDeltas_InOrder()
     {
         var ndjson = string.Join("\n",

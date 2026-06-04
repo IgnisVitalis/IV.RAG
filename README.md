@@ -127,6 +127,7 @@ they use **separate clients** with separate timeouts:
 {
     o.GenerationModel = "llama3.2";
     o.GenerationTimeoutSeconds = 600;  // generation is slower — default 600
+    o.MaxContextChars = 8000;          // cap retrieved context; drop lowest-ranked chunks (0 = no limit)
 })
 .AddRemoteRetrievalPipeline(o =>
 {
