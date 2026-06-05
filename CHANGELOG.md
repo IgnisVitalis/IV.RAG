@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-06-03
+
+### Added
+
+- **Multi-store (keyed DI)** — register independent retrieval stacks for different domains/tenants, each with its own table and (optionally) embedding model:
+  - `AddPostgresVectorStore(string key, Action<PostgresOptions>)` — keyed `NpgsqlDataSource` + `IVectorStore` + `IRetriever` under `key`, each with its own connection/table. Uses a keyed `IEmbedder` registered under the same key if present, otherwise the default embedder.
+  - `AddOllamaEmbedder(string key, Action<OllamaOptions>?)` — keyed `IEmbedder` + named options + HTTP client, so domains can use different embedding models.
+  - `AddKeyedRetrievalPipeline(string key)` (`Core`) — keyed `IIngestionPipeline` + `IRetrievalPipeline` backed by the keyed store/retriever/embedder, sharing the registered chunker.
+  - Resolve per domain with `GetRequiredKeyedService<…>(key)`. The existing unkeyed registrations are the unchanged default single-store path. (Lexical retriever, hybrid pipeline, and query cache remain single-store for now.)
+- `OllamaEmbedder` gains an internal constructor taking an already-resolved `HttpClient` + `OllamaOptions`, used by the keyed registration.
+
 ## [0.24.0] - 2026-06-03
 
 ### Added

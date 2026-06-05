@@ -25,22 +25,56 @@ public static class ServiceCollectionExtensions
             .Validate(o => Uri.TryCreate(o.Endpoint, UriKind.Absolute, out _), "OllamaOptions.Endpoint must be an absolute URI.")
             .ValidateOnStart();
 
-        builder.Services.AddHttpClient(EmbedderClientName)
+        AddEmbedderClient(builder.Services, EmbedderClientName,
+            sp => sp.GetRequiredService<IOptions<OllamaOptions>>().Value);
+
+        builder.Services.AddSingleton<IEmbedder, OllamaEmbedder>();
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a <b>keyed</b> <see cref="OllamaEmbedder"/> (multi-store): a separate
+    /// <see cref="IEmbedder"/>, options, and HTTP client under <paramref name="key"/>, so different
+    /// domains can use different embedding models. Resolve with
+    /// <c>GetRequiredKeyedService&lt;IEmbedder&gt;(key)</c>; keyed vector stores registered under the
+    /// same key pick it up automatically.
+    /// </summary>
+    public static RAGBuilder AddOllamaEmbedder(
+        this RAGBuilder builder,
+        string key,
+        Action<OllamaOptions>? configure = null)
+    {
+        builder.Services.AddOptions<OllamaOptions>(key)
+            .Configure(configure ?? (_ => { }))
+            .Validate(o => Uri.TryCreate(o.Endpoint, UriKind.Absolute, out _), "OllamaOptions.Endpoint must be an absolute URI.")
+            .ValidateOnStart();
+
+        AddEmbedderClient(builder.Services, $"{EmbedderClientName}.{key}",
+            sp => sp.GetRequiredService<IOptionsMonitor<OllamaOptions>>().Get(key));
+
+        builder.Services.AddKeyedSingleton<IEmbedder>(key, (sp, k) =>
+        {
+            var keyStr = (string)k!;
+            var options = sp.GetRequiredService<IOptionsMonitor<OllamaOptions>>().Get(keyStr);
+            var client = sp.GetRequiredService<IHttpClientFactory>().CreateClient($"{EmbedderClientName}.{keyStr}");
+            return new OllamaEmbedder(client, options);
+        });
+        return builder;
+    }
+
+    private static void AddEmbedderClient(
+        IServiceCollection services, string clientName, Func<IServiceProvider, OllamaOptions> getOptions)
+    {
+        services.AddHttpClient(clientName)
             .ConfigureHttpClient((sp, client) =>
             {
-                var options = sp.GetRequiredService<IOptions<OllamaOptions>>().Value;
+                var options = getOptions(sp);
                 client.BaseAddress = new Uri(options.Endpoint);
                 client.Timeout = Timeout.InfiniteTimeSpan; // the resilience pipeline owns timeouts
             })
             .AddStandardResilienceHandler()
             .Configure((resilience, sp) =>
-            {
-                var options = sp.GetRequiredService<IOptions<OllamaOptions>>().Value;
-                ConfigureResilience(resilience, options.EmbeddingTimeoutSeconds, maxRetries: 2, retryOnTimeout: true);
-            });
-
-        builder.Services.AddSingleton<IEmbedder, OllamaEmbedder>();
-        return builder;
+                ConfigureResilience(resilience, getOptions(sp).EmbeddingTimeoutSeconds, maxRetries: 2, retryOnTimeout: true));
     }
 
     /// <summary>

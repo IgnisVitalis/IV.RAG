@@ -46,6 +46,57 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers a <b>keyed</b> vector store (multi-store): a separate <see cref="NpgsqlDataSource"/>,
+    /// <see cref="IVectorStore"/>, and <see cref="IRetriever"/> under <paramref name="key"/>, each with
+    /// its own table and connection. The store uses a keyed <see cref="IEmbedder"/> registered under the
+    /// same key if present, otherwise the default embedder. Resolve with
+    /// <c>GetRequiredKeyedService&lt;IVectorStore&gt;(key)</c> / <c>&lt;IRetriever&gt;(key)</c>, or chain
+    /// <c>AddKeyedRetrievalPipeline(key)</c> (from <c>IV.RAG.Core</c>) for a per-domain pipeline.
+    /// </summary>
+    public static RAGBuilder AddPostgresVectorStore(
+        this RAGBuilder builder,
+        string key,
+        Action<PostgresOptions> configure)
+    {
+        builder.Services.AddOptions<PostgresOptions>(key)
+            .Configure(configure)
+            .Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString), "PostgresOptions.ConnectionString must not be empty.")
+            .ValidateOnStart();
+
+        builder.Services.AddKeyedSingleton<NpgsqlDataSource>(key, (sp, k) =>
+        {
+            var options = sp.GetRequiredService<IOptionsMonitor<PostgresOptions>>().Get((string)k!);
+            var dataSourceBuilder = new NpgsqlDataSourceBuilder(options.ConnectionString);
+            dataSourceBuilder.UseVector();
+            return dataSourceBuilder.Build();
+        });
+
+        builder.Services.AddKeyedSingleton<IVectorStore>(key, (sp, k) =>
+        {
+            var keyStr = (string)k!;
+            return new PostgresVectorStore(
+                sp.GetRequiredKeyedService<NpgsqlDataSource>(keyStr),
+                EmbedderFor(sp, keyStr),
+                Options.Create(sp.GetRequiredService<IOptionsMonitor<PostgresOptions>>().Get(keyStr)),
+                sp.GetService<ILogger<PostgresVectorStore>>());
+        });
+
+        builder.Services.AddKeyedSingleton<IRetriever>(key, (sp, k) =>
+        {
+            var keyStr = (string)k!;
+            return new PostgresRetriever(
+                sp.GetRequiredKeyedService<NpgsqlDataSource>(keyStr),
+                EmbedderFor(sp, keyStr),
+                Options.Create(sp.GetRequiredService<IOptionsMonitor<PostgresOptions>>().Get(keyStr)));
+        });
+        return builder;
+    }
+
+    // A keyed embedder registered under the same key, or the default embedder if none.
+    private static IEmbedder EmbedderFor(IServiceProvider sp, string key) =>
+        sp.GetKeyedService<IEmbedder>(key) ?? sp.GetRequiredService<IEmbedder>();
+
+    /// <summary>
     /// Registers <see cref="PostgresLexicalRetriever"/> as <see cref="ILexicalRetriever"/>
     /// for use with hybrid retrieval.
     /// </summary>

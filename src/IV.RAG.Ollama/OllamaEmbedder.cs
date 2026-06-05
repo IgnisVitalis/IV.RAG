@@ -23,12 +23,18 @@ public sealed class OllamaEmbedder : IEmbedder
         }
     }
 
-    /// <summary>Initializes a new instance using the Ollama embedder HTTP client.</summary>
+    /// <summary>Initializes a new instance using the default Ollama embedder HTTP client.</summary>
     public OllamaEmbedder(IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
+        : this(httpClientFactory.CreateClient(ServiceCollectionExtensions.EmbedderClientName), options.Value)
     {
-        _httpClient = httpClientFactory.CreateClient(ServiceCollectionExtensions.EmbedderClientName);
-        _options = options.Value;
-        _model = options.Value.EmbeddingModel;
+    }
+
+    // Used by keyed (multi-store) registration, which resolves a per-key client and named options.
+    internal OllamaEmbedder(HttpClient httpClient, OllamaOptions options)
+    {
+        _httpClient = httpClient;
+        _options = options;
+        _model = options.EmbeddingModel;
     }
 
     /// <inheritdoc/>

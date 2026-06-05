@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace IV.RAG;
@@ -180,5 +181,30 @@ public static class ServiceCollectionExtensions
                 ?? ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!));
             return decorate(inner);
         });
+    }
+
+    /// <summary>
+    /// Registers a <b>keyed</b> retrieval pipeline (multi-store) under <paramref name="key"/>: keyed
+    /// <see cref="IIngestionPipeline"/> and <see cref="IRetrievalPipeline"/> backed by the keyed
+    /// <see cref="IVectorStore"/> / <see cref="IRetriever"/> (and keyed <see cref="IEmbedder"/> if one is
+    /// registered under the same key, otherwise the default), sharing the registered chunker. Resolve
+    /// with <c>GetRequiredKeyedService&lt;IRetrievalPipeline&gt;(key)</c> /
+    /// <c>&lt;IIngestionPipeline&gt;(key)</c>.
+    /// </summary>
+    public static RAGBuilder AddKeyedRetrievalPipeline(this RAGBuilder builder, string key)
+    {
+        builder.Services.AddKeyedSingleton<RetrievalPipeline>(key, (sp, k) =>
+        {
+            var keyStr = (string)k!;
+            return new RetrievalPipeline(
+                sp.GetRequiredService<IChunker>(),
+                sp.GetKeyedService<IEmbedder>(keyStr) ?? sp.GetRequiredService<IEmbedder>(),
+                sp.GetRequiredKeyedService<IVectorStore>(keyStr),
+                sp.GetRequiredKeyedService<IRetriever>(keyStr),
+                sp.GetService<ILogger<RetrievalPipeline>>() ?? NullLogger<RetrievalPipeline>.Instance);
+        });
+        builder.Services.AddKeyedSingleton<IIngestionPipeline>(key, (sp, k) => sp.GetRequiredKeyedService<RetrievalPipeline>((string)k!));
+        builder.Services.AddKeyedSingleton<IRetrievalPipeline>(key, (sp, k) => sp.GetRequiredKeyedService<RetrievalPipeline>((string)k!));
+        return builder;
     }
 }

@@ -8,17 +8,6 @@ indicative of v0.9.0 and may shift as work lands.
 
 ---
 
-## Tier 4 — Access control & multi-store (multi-tenant service primitives)
-
-These were the original backlog. For a RAG service serving end applications they are
-correctness/security primitives, not just features, and pair naturally with Tiers 1–2.
-
-- [ ] **Multi-table / keyed DI support**
-  Allow registering multiple `IVectorStore` instances for different domains, each pointing to a
-  different table with its own model config. Design questions: key the `NpgsqlDataSource` and
-  `PostgresOptions` per store; provide keyed `Add*` overloads; decide how pipelines select a
-  store. Composes with the existing factory-based singleton registrations.
-
 ## Tier 5 — Polish
 
 - [ ] **De-duplicate the answer loop**

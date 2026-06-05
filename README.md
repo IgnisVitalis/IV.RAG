@@ -211,6 +211,31 @@ services.AddAnswerPipeline()
 var answer = await answerPipeline.AnswerAsync("What is RAG?");
 ```
 
+### Multiple stores (keyed DI)
+
+Register independent retrieval stacks for different domains — each with its own table and, optionally,
+its own embedding model — under a string key. The unkeyed registrations remain the default single-store
+path; the keyed ones live alongside.
+
+```csharp
+services.AddRagToolkit()
+    .AddSentenceChunker()                                   // shared across domains
+    .AddOllamaEmbedder()                                    // default embedder (fallback)
+    .AddOllamaEmbedder("invoices", o => o.EmbeddingModel = "mxbai-embed-large") // per-domain model (optional)
+    .AddPostgresVectorStore("invoices", o => { o.ConnectionString = "..."; o.TableName = "invoices"; })
+    .AddPostgresVectorStore("emails",   o => { o.ConnectionString = "..."; o.TableName = "emails"; })
+    .AddKeyedRetrievalPipeline("invoices")
+    .AddKeyedRetrievalPipeline("emails");
+
+// Resolve per domain:
+var invoices = sp.GetRequiredKeyedService<IRetrievalPipeline>("invoices");
+var emails   = sp.GetRequiredKeyedService<IIngestionPipeline>("emails");
+var store    = sp.GetRequiredKeyedService<IVectorStore>("invoices");
+```
+
+A keyed store uses the keyed embedder registered under the same key if present, otherwise the default
+embedder. (Lexical retriever, hybrid pipeline, and query cache are single-store for now.)
+
 ## Embedding model versioning
 
 Every chunk stored in the vector table carries a reference to the embedding model that produced its vector. The model identity — provider, name, and dimensions — is tracked in a `{tableName}_models` companion table.
