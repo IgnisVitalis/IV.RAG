@@ -207,4 +207,50 @@ public static class ServiceCollectionExtensions
         builder.Services.AddKeyedSingleton<IRetrievalPipeline>(key, (sp, k) => sp.GetRequiredKeyedService<RetrievalPipeline>((string)k!));
         return builder;
     }
+
+    /// <summary>
+    /// Validates that the registrations required by the configured pipelines are present, throwing a
+    /// single <see cref="InvalidOperationException"/> listing everything missing — instead of a cryptic
+    /// dependency-injection error when a pipeline is first resolved. Call at the end of setup.
+    /// </summary>
+    public static RAGBuilder Validate(this RAGBuilder builder)
+    {
+        var services = builder.Services;
+        bool Has(Type serviceType) => services.Any(d => d.ServiceType == serviceType && !d.IsKeyedService);
+
+        var missing = new List<string>();
+        var flagged = new HashSet<Type>();
+        void Require(Type serviceType, string hint)
+        {
+            if (!Has(serviceType) && flagged.Add(serviceType))
+                missing.Add($"{serviceType.Name} — {hint}");
+        }
+
+        // Local ingest + retrieve stack (RetrievalPipeline / full RAG).
+        if (Has(typeof(IIngestionPipeline)))
+        {
+            Require(typeof(IChunker), "register a chunker (e.g. AddSentenceChunker / AddPlainTextChunker)");
+            Require(typeof(IEmbedder), "register an embedder (e.g. AddOllamaEmbedder)");
+            Require(typeof(IVectorStore), "register a vector store (e.g. AddPostgresVectorStore)");
+            Require(typeof(IRetriever), "register a retriever (e.g. AddPostgresVectorStore)");
+        }
+
+        // Answer pipelines (full RAG or client) need a generator and a retrieval pipeline.
+        if (Has(typeof(IAnswerPipeline)))
+        {
+            Require(typeof(IGenerator), "register a generator (e.g. AddOllamaGenerator)");
+            Require(typeof(IRetrievalPipeline), "register a retrieval pipeline (e.g. AddRagToolkit / AddRemoteRetrievalPipeline)");
+        }
+
+        // Lexical (hybrid) retrieval reuses the vector store's data source.
+        if (Has(typeof(ILexicalRetriever)))
+            Require(typeof(IVectorStore), "AddPostgresLexicalRetriever() requires AddPostgresVectorStore() first");
+
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                "RAG configuration is incomplete — missing registrations:" + Environment.NewLine +
+                string.Join(Environment.NewLine, missing.Select(m => "  • " + m)));
+
+        return builder;
+    }
 }

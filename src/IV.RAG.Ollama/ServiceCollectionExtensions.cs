@@ -78,6 +78,19 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers a startup warm-up (hosted service) that performs one probe embed so an auto-detected
+    /// embedding dimension is resolved before the first vector-store operation, removing the
+    /// embed-before-schema ordering caveat. Opt-in: it touches Ollama at host startup, but warm-up
+    /// failures are non-fatal (the dimension is detected on the first real embed instead). Warms the
+    /// default <see cref="IEmbedder"/>.
+    /// </summary>
+    public static RAGBuilder AddOllamaEmbedderWarmup(this RAGBuilder builder)
+    {
+        builder.Services.AddHostedService<OllamaEmbedderWarmup>();
+        return builder;
+    }
+
+    /// <summary>
     /// Registers <see cref="OllamaGenerator"/> as the <see cref="IGenerator"/> implementation.
     /// </summary>
     public static RAGBuilder AddOllamaGenerator(

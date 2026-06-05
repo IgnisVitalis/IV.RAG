@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-06-03
+
+### Added
+
+- `RAGBuilder.Validate()` (`Core`) — checks that the registrations required by the configured pipelines are present (chunker/embedder/vector store/retriever for the local stack; generator + retrieval pipeline for answer pipelines; vector store for lexical retrieval) and throws a single `InvalidOperationException` listing everything missing, instead of a cryptic dependency-injection error at first resolve.
+- `AddOllamaEmbedderWarmup()` (`Ollama`) — opt-in hosted service that performs one probe embed at startup, so an auto-detected embedding dimension is resolved before the first vector-store operation (removing the embed-before-schema-init ordering caveat). Warm-up failures are non-fatal — the dimension falls back to detection on the first real embed. Adds a `Microsoft.Extensions.Hosting.Abstractions` dependency to the Ollama package.
+
 ## [0.26.0] - 2026-06-03
 
 ### Changed

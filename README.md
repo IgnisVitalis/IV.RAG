@@ -173,6 +173,21 @@ services.AddRagToolkit()
 // app.MapHealthChecks("/health");
 ```
 
+### Startup validation & warm-up
+
+`Validate()` checks that the registrations the configured pipelines need are present and throws one
+error listing anything missing — instead of a cryptic DI failure when a pipeline is first resolved:
+
+```csharp
+services.AddRagToolkit()
+    .AddSentenceChunker().AddOllamaEmbedder(...).AddPostgresVectorStore(...).AddOllamaGenerator(...)
+    .Validate(); // throws now, listing any missing embedder/store/retriever/generator
+```
+
+When the embedding dimension is auto-detected (`EmbeddingDimensions = 0`), `AddOllamaEmbedderWarmup()`
+registers a startup probe so the dimension is known before the first store operation — removing the
+need to embed before schema initialization. It's opt-in and warm-up failures are non-fatal.
+
 ### Server — retrieval only
 
 Exposes a retrieval endpoint; does not generate answers.
