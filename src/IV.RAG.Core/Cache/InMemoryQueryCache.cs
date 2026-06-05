@@ -43,6 +43,16 @@ public sealed class InMemoryQueryCache : IQueryCache
             .Select(x => x.entry)
             .FirstOrDefault();
 
+        if (best is not null)
+        {
+            // LRU: move the hit to the back so it is the last to be evicted.
+            lock (_lock)
+            {
+                if (_entries.Remove(best))
+                    _entries.Add(best);
+            }
+        }
+
         return Task.FromResult<IReadOnlyList<SearchResult>?>(best?.Results);
     }
 
@@ -67,7 +77,7 @@ public sealed class InMemoryQueryCache : IQueryCache
         {
             _entries.RemoveAll(e => e.ExpiresAt <= now);
             if (_entries.Count >= _options.MaxEntries)
-                _entries.RemoveAt(0);
+                _entries.RemoveAt(0); // evict least-recently-used (reads move hits to the back)
             _entries.Add(entry);
         }
 

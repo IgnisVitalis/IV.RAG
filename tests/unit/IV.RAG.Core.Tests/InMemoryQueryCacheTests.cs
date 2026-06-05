@@ -136,4 +136,22 @@ public class InMemoryQueryCacheTests
         (await cache.GetAsync(Vec(0, 1, 0), DefaultOptions)).Should().NotBeNull();
         (await cache.GetAsync(Vec(0, 0, 1), DefaultOptions)).Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task SetAsync_ExceedsMaxEntries_EvictsLeastRecentlyUsed_NotOldest()
+    {
+        var cache = Create(new QueryCacheOptions { SimilarityThreshold = 0.99f, Ttl = TimeSpan.FromHours(1), MaxEntries = 2 });
+        await cache.SetAsync(Vec(1, 0, 0), DefaultOptions, Results(Origin1)); // oldest
+        await cache.SetAsync(Vec(0, 1, 0), DefaultOptions, Results(Origin1));
+
+        // Touch the oldest so it becomes most-recently-used.
+        (await cache.GetAsync(Vec(1, 0, 0), DefaultOptions)).Should().NotBeNull();
+
+        // Adding a third entry evicts the least-recently-used ([0, 1, 0]), not the oldest ([1, 0, 0]).
+        await cache.SetAsync(Vec(0, 0, 1), DefaultOptions, Results(Origin1));
+
+        (await cache.GetAsync(Vec(0, 1, 0), DefaultOptions)).Should().BeNull();    // evicted (LRU)
+        (await cache.GetAsync(Vec(1, 0, 0), DefaultOptions)).Should().NotBeNull(); // survived (was touched)
+        (await cache.GetAsync(Vec(0, 0, 1), DefaultOptions)).Should().NotBeNull();
+    }
 }

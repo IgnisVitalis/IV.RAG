@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-06-03
+
+### Changed
+
+- `RagPipeline` and `AnswerPipeline` now share a single retrieve→generate implementation (internal `AnswerLoop`) behind `AnswerAsync` / `AnswerWithSourcesAsync` / `AnswerStreamAsync`, removing the duplicated logic between the two pipelines. Behavior is unchanged.
+- `InMemoryQueryCache` now evicts the **least-recently-used** entry instead of the oldest: a cache hit marks its entry most-recently-used, so frequently-hit entries survive longer under the `MaxEntries` cap.
+
+### Added
+
+- `.editorconfig` — standardizes line endings (LF), UTF-8, final newline, indentation, and C# conventions (file-scoped namespaces, `var`, expression-bodied members) across the solution.
+
 ## [0.25.0] - 2026-06-03
 
 ### Added

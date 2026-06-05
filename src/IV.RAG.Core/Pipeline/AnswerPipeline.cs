@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 
 namespace IV.RAG;
@@ -29,33 +28,16 @@ public sealed class AnswerPipeline : IAnswerPipeline
         (await AnswerWithSourcesAsync(query, options, cancellationToken)).Text;
 
     /// <inheritdoc/>
-    public async Task<AnswerResult> AnswerWithSourcesAsync(
+    public Task<AnswerResult> AnswerWithSourcesAsync(
         string query,
         RetrievalOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        using var activity = RagDiagnostics.ActivitySource.StartActivity("rag.answer");
-        _logger.LogDebug("Answering: \"{Query}\".", query);
-
-        var chunks = await _retrieval.QueryAsync(query, options, cancellationToken);
-        var answer = await _generator.GenerateAsync(query, chunks, cancellationToken);
-
-        _logger.LogDebug("Generated answer ({Length} chars).", answer.Length);
-        return new AnswerResult(answer, chunks);
-    }
+        CancellationToken cancellationToken = default) =>
+        AnswerLoop.AnswerWithSourcesAsync(_retrieval, _generator, _logger, query, options, cancellationToken);
 
     /// <inheritdoc/>
-    public async IAsyncEnumerable<string> AnswerStreamAsync(
+    public IAsyncEnumerable<string> AnswerStreamAsync(
         string query,
         RetrievalOptions? options = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        using var activity = RagDiagnostics.ActivitySource.StartActivity("rag.answer");
-        activity?.SetTag("rag.streaming", true);
-        _logger.LogDebug("Answering (streaming): \"{Query}\".", query);
-
-        var chunks = await _retrieval.QueryAsync(query, options, cancellationToken);
-        await foreach (var fragment in _generator.GenerateStreamAsync(query, chunks, cancellationToken))
-            yield return fragment;
-    }
+        CancellationToken cancellationToken = default) =>
+        AnswerLoop.AnswerStreamAsync(_retrieval, _generator, _logger, query, options, cancellationToken);
 }
